@@ -1,0 +1,32 @@
+2025-07-11 13:19:51,081 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:19:51,081 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:22:06,279 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:22:06,280 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:22:06,280 - nq_trading_agent.main - ERROR - Error initializing components: OpenAI library not installed. Run: pip install openai
+2025-07-11 13:22:32,879 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:22:32,879 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:22:33,142 - nq_trading_agent.main - ERROR - Error initializing components: The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+2025-07-11 13:27:34,007 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:27:34,007 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:27:34,174 - nq_trading_agent.main - INFO - All components initialized
+2025-07-11 13:27:34,386 - nq_trading_agent.data.ingestion - INFO - Authenticated with Tradovate API
+2025-07-11 13:27:34,386 - nq_trading_agent.data.ingestion - INFO - Connected to Tradovate API
+2025-07-11 13:27:34,455 - nq_trading_agent.data.ingestion - ERROR - Error getting historical data: Failed to get historical data: 401
+2025-07-11 13:27:34,471 - asyncio - ERROR - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x135117220>
+2025-07-11 13:27:34,472 - asyncio - ERROR - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x1369986a0>, 1.186479291)])']
+connector: <aiohttp.connector.TCPConnector object at 0x136975f70>
+2025-07-11 13:33:44,937 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:33:44,937 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:33:45,126 - nq_trading_agent.main - INFO - All components initialized
+2025-07-11 13:33:45,126 - nq_trading_agent.data.ingestion - INFO - Connected to mock data source
+2025-07-11 13:44:37,768 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:44:37,768 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:44:37,947 - nq_trading_agent.main - INFO - All components initialized
+2025-07-11 13:44:37,947 - nq_trading_agent.data.ingestion - INFO - Connected to mock data source
+2025-07-11 13:44:48,398 - root - INFO - Logging configured - Level: INFO, File: logs/nq_trading_agent.log
+2025-07-11 13:44:48,398 - nq_trading_agent.main - INFO - NQ Trading Agent initialized
+2025-07-11 13:44:48,541 - nq_trading_agent.main - INFO - All components initialized
+2025-07-11 13:44:48,541 - nq_trading_agent.data.ingestion - INFO - Connected to mock data source
+2025-07-11 13:44:48,541 - nq_trading_agent.data.ingestion - INFO - Disconnected from mock data source

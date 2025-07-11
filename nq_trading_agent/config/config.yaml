@@ -1,0 +1,165 @@
+# NQ Trading Agent Configuration
+
+# LLM Configuration
+llm:
+  # Choose provider: openai, groq, openrouter, ollama
+  provider: "ollama"
+  
+  # OpenAI Configuration
+  openai:
+    model: "gpt-4o-mini"
+    api_key: "${OPENAI_API_KEY}"
+    temperature: 0.1
+    max_tokens: 1000
+    
+  # Groq Configuration
+  groq:
+    model: "llama3-70b-8192"
+    api_key: "${GROQ_API_KEY}"
+    temperature: 0.1
+    max_tokens: 1000
+    
+  # OpenRouter Configuration
+  openrouter:
+    model: "anthropic/claude-3-haiku"
+    api_key: "${OPENROUTER_API_KEY}"
+    temperature: 0.1
+    max_tokens: 1000
+    
+  # Ollama Configuration
+  ollama:
+    model: "phi3:mini"
+    host: "http://localhost:11434"
+    temperature: 0.1
+    max_tokens: 1000
+
+# Data Configuration
+data:
+  # Data source: tradovate, yahoo, mock
+  source: "yahoo"
+  
+  # NQ Contract Configuration
+  nq:
+    symbol: "NQ"
+    exchange: "CME"
+    tick_size: 0.25
+    tick_value: 5.0
+    contract_size: 20
+    margin_requirement: 16500
+    
+  # Tradovate Configuration
+  tradovate:
+    api_key: "${TRADOVATE_API_KEY}"
+    api_secret: "${TRADOVATE_API_SECRET}"
+    account_id: "${TRADOVATE_ACCOUNT_ID}"
+    demo: true
+    websocket_url: "wss://demo.tradovateapi.com/v1/websocket"
+    rest_url: "https://demo.tradovateapi.com/v1"
+    
+  # Yahoo Finance Configuration
+  yahoo:
+    symbol: "NQ=F"
+    interval: "1m"
+    
+  # Mock Configuration
+  mock:
+    volatility: 0.02
+    starting_price: 15000.0
+
+# Trading Configuration
+trading:
+  # Trading mode: live, paper, backtest
+  mode: "paper"
+  
+  # Account Configuration
+  account:
+    initial_balance: 100000.0
+    max_position_size: 0.02  # 2% of account per trade
+    max_daily_loss: 0.05     # 5% max daily loss
+    
+  # Risk Management
+  risk:
+    stop_loss_pct: 0.005     # 0.5% stop loss
+    take_profit_pct: 0.015   # 1.5% take profit
+    max_drawdown: 0.10       # 10% max drawdown
+    
+  # Strategy Configuration
+  strategies:
+    thrust_momentum:
+      enabled: true
+      min_volume_spike: 2.0
+      min_price_change: 0.003
+      
+    pattern_recognition:
+      enabled: true
+      patterns: ["head_and_shoulders", "flags", "triangles"]
+      
+    liquidity_analysis:
+      enabled: true
+      fair_value_gaps: true
+      liquidity_grabs: true
+      
+    statistical_levels:
+      enabled: true
+      support_resistance: true
+      volatility_bands: true
+
+# Preprocessing Configuration
+preprocessing:
+  # Technical Indicators
+  indicators:
+    sma: [20, 50, 200]
+    ema: [12, 26]
+    rsi: [14]
+    macd: [12, 26, 9]
+    bollinger: [20, 2]
+    atr: [14]
+    volume_sma: [20]
+    
+  # Pattern Detection
+  patterns:
+    lookback_periods: 50
+    min_pattern_strength: 0.7
+    
+  # Summarization
+  summarization:
+    max_tokens: 200
+    include_volume: true
+    include_volatility: true
+    include_momentum: true
+
+# Execution Configuration
+execution:
+  # Order Configuration
+  orders:
+    default_quantity: 1
+    order_type: "market"  # market, limit, stop
+    timeout: 30
+    
+  # Position Management
+  positions:
+    max_positions: 3
+    scale_in_enabled: false
+    scale_out_enabled: true
+    
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/nq_trading_agent.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Testing Configuration
+testing:
+  # Backtesting
+  backtest:
+    start_date: "2023-01-01"
+    end_date: "2023-12-31"
+    initial_balance: 100000.0
+    
+  # Mock Data
+  mock_data:
+    generate_patterns: true
+    add_noise: true
+    noise_level: 0.001

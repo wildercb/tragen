@@ -1,0 +1,6 @@
+# ILM/LLM Trading Strategy Prompt
+
+Apply ILM (Intraday Limit Move) strategy:
+- Monitor for limit moves (+/- 5% in NQ).
+- Use LLM for sentiment analysis on news.
+- Enter trades on breakouts with stop-loss at 0.5%. 

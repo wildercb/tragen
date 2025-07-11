@@ -1,0 +1,6 @@
+# Trading Mindset Prompt
+
+Maintain discipline:
+- Avoid FOMO: Wait for confirmation.
+- Manage risk: Never risk >1% per trade.
+- Journal emotions: Rate confidence 1-10 before entry. 

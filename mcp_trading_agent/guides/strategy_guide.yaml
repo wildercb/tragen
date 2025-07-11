@@ -1,0 +1,9 @@
+strategies:
+  ilm:
+    entry: 'Breakout above resistance'
+    exit: 'Trailing stop at ATR*2'
+    risk: 0.5
+  mindset:
+    rules:
+      - 'Pause after 2 losses'
+      - 'Review journal daily' 

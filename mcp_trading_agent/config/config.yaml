@@ -1,0 +1,224 @@
+# MCP Trading Agent Configuration
+# ===============================
+
+# MCP Server Configuration
+mcp:
+  server:
+    host: "localhost"
+    port: 8000
+    name: "NQ Trading Agent"
+    version: "2.0.0"
+  
+  tools:
+    # Enable/disable specific tool categories
+    data_ingestion: true
+    technical_analysis: true
+    ai_analysis: true
+    trade_execution: true
+    risk_management: true
+    backtesting: true
+
+# LLM Provider Configuration
+llm:
+  # Default provider
+  default_provider: "ollama"
+  
+  # Provider configurations
+  providers:
+    ollama:
+      enabled: true
+      host: "http://localhost:11434"
+      models:
+        - name: "phi3:mini"
+          context_length: 4096
+          capabilities: ["chat", "analysis"]
+        - name: "gemma3:4b"
+          context_length: 8192
+          capabilities: ["chat", "analysis", "reasoning"]
+      default_model: "phi3:mini"
+      
+    openai:
+      enabled: false
+      api_key: "${OPENAI_API_KEY}"
+      models:
+        - name: "gpt-4o-mini"
+          context_length: 16384
+          capabilities: ["chat", "analysis", "reasoning", "function_calling"]
+        - name: "gpt-4o"
+          context_length: 32768
+          capabilities: ["chat", "analysis", "reasoning", "function_calling"]
+      default_model: "gpt-4o-mini"
+      
+    groq:
+      enabled: false
+      api_key: "${GROQ_API_KEY}"
+      models:
+        - name: "llama3-70b-8192"
+          context_length: 8192
+          capabilities: ["chat", "analysis"]
+        - name: "mixtral-8x7b-32768"
+          context_length: 32768
+          capabilities: ["chat", "analysis", "reasoning"]
+      default_model: "llama3-70b-8192"
+      
+    external_gpu:
+      enabled: false
+      endpoints:
+        - name: "local_gpu_server"
+          url: "http://localhost:8001/v1"
+          api_key: "${GPU_SERVER_API_KEY}"
+          models: ["llama3-70b", "mixtral-8x7b"]
+        - name: "cloud_gpu"
+          url: "https://api.your-gpu-provider.com/v1"
+          api_key: "${CLOUD_GPU_API_KEY}"
+          models: ["llama3-405b", "gpt-4-turbo"]
+
+# Data Sources Configuration
+data:
+  sources:
+    yahoo_finance:
+      enabled: true
+      symbols:
+        nq: "NQ=F"
+        es: "ES=F"
+        ym: "YM=F"
+      intervals: ["1m", "5m", "15m", "1h", "1d"]
+      
+    tradovate:
+      enabled: false
+      api_key: "${TRADOVATE_API_KEY}"
+      api_secret: "${TRADOVATE_API_SECRET}"
+      account_id: "${TRADOVATE_ACCOUNT_ID}"
+      demo: true
+      
+    mock:
+      enabled: true
+      volatility: 0.02
+      starting_price: 23000.0
+      
+  nq_contract:
+    symbol: "NQ"
+    exchange: "CME"
+    tick_size: 0.25
+    tick_value: 5.0
+    contract_size: 20
+    margin_requirement: 16500
+
+# Agent Configurations
+agents:
+  analysis_agent:
+    provider: "ollama"
+    model: "phi3:mini"
+    temperature: 0.1
+    max_tokens: 1000
+    context_window: 4096
+    specialization: "technical_analysis"
+    
+  execution_agent:
+    provider: "ollama" 
+    model: "phi3:mini"
+    temperature: 0.05
+    max_tokens: 500
+    context_window: 2048
+    specialization: "trade_execution"
+    
+  risk_agent:
+    provider: "ollama"
+    model: "phi3:mini"
+    temperature: 0.0
+    max_tokens: 500
+    context_window: 2048
+    specialization: "risk_management"
+
+# Trading Configuration
+trading:
+  mode: "paper"  # paper, live, backtest
+  
+  risk_management:
+    max_position_size_pct: 2.0  # 2% of account
+    max_daily_loss_pct: 5.0     # 5% daily loss limit
+    stop_loss_pct: 0.5          # 0.5% stop loss
+    take_profit_pct: 1.5        # 1.5% take profit
+    max_drawdown_pct: 10.0      # 10% max drawdown
+    
+  execution:
+    order_type: "market"
+    timeout_seconds: 30
+    max_slippage_ticks: 2
+    
+  strategies:
+    momentum_breakout:
+      enabled: true
+      min_volume_spike: 2.0
+      min_price_change_pct: 0.3
+      
+    mean_reversion:
+      enabled: false
+      rsi_oversold: 30
+      rsi_overbought: 70
+      
+    pattern_recognition:
+      enabled: true
+      patterns: ["head_shoulders", "flags", "triangles"]
+      min_confidence: 0.7
+
+# Tool-specific Configurations
+tools:
+  data_ingestion:
+    cache_duration_minutes: 5
+    max_data_points: 1000
+    supported_intervals: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    
+  technical_analysis:
+    indicators:
+      sma_periods: [20, 50, 200]
+      ema_periods: [12, 26]
+      rsi_period: 14
+      macd_params: [12, 26, 9]
+      bollinger_params: [20, 2]
+      atr_period: 14
+      
+  ai_analysis:
+    max_context_tokens: 4000
+    summary_max_tokens: 200
+    confidence_threshold: 0.6
+    
+  backtesting:
+    commission_per_contract: 2.50
+    initial_balance: 100000.0
+    max_lookback_days: 365
+
+# Web UI Configuration
+ui:
+  enabled: true
+  host: "localhost"
+  port: 3000
+  
+  features:
+    real_time_charts: true
+    agent_monitoring: true
+    configuration_editor: true
+    backtesting_interface: true
+    trade_journal: true
+    
+  auth:
+    enabled: false
+    secret_key: "${UI_SECRET_KEY}"
+    
+  themes:
+    default: "dark"
+    available: ["dark", "light", "trading"]
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/mcp_trading_agent.log"
+  max_size: "10MB"
+  backup_count: 5
+  
+  loggers:
+    mcp: "INFO"
+    agents: "INFO"
+    tools: "INFO"
+    providers: "DEBUG"

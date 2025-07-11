@@ -1,0 +1,7 @@
+# Chart Review Prompt
+
+You are reviewing NQ futures charts. Follow these steps:
+1. Identify key levels (support/resistance).
+2. Analyze trends using MAs and RSI.
+3. Consider volume spikes.
+4. Provide buy/sell signals with confidence. 
