@@ -18,6 +18,46 @@ import random
 
 logger = logging.getLogger(__name__)
 
+def is_crypto_symbol(symbol: str) -> bool:
+    """Check if a symbol is a cryptocurrency."""
+    crypto_patterns = [
+        'USDT', 'USD', 'BTC', 'ETH', 'ADA', 'XRP', 'SOL', 'DOT', 'DOGE', 
+        'AVAX', 'MATIC', 'LTC', 'LINK', 'BNB', 'UNI', 'ATOM', 'FTT'
+    ]
+    symbol_upper = symbol.upper()
+    
+    # Check for common crypto patterns
+    for pattern in crypto_patterns:
+        if pattern in symbol_upper:
+            return True
+    
+    # Check for common crypto suffixes
+    if symbol_upper.endswith(('-USD', 'USDT', 'BUSD', 'USDC')):
+        return True
+        
+    return False
+
+def format_symbol_for_yahoo(symbol: str) -> str:
+    """Format symbol for Yahoo Finance API."""
+    symbol = symbol.upper()
+    
+    # Handle cryptocurrency pairs
+    if 'USDT' in symbol and not symbol.endswith('-USD'):
+        # Convert BTCUSDT to BTC-USD for Yahoo Finance
+        base = symbol.replace('USDT', '')
+        if base in ['BTC', 'ETH', 'ADA', 'XRP', 'SOL', 'DOT', 'DOGE', 'AVAX', 'MATIC', 'LTC', 'LINK', 'BNB']:
+            return f"{base}-USD"
+    
+    # Handle other crypto formats
+    if symbol.endswith('USD') and len(symbol) > 3 and not symbol.endswith('-USD'):
+        # Convert BTCUSD to BTC-USD
+        base = symbol[:-3]
+        if len(base) <= 5:  # Most crypto symbols are 3-5 chars
+            return f"{base}-USD"
+    
+    # Return original symbol for stocks, futures, forex
+    return symbol
+
 # Request/Response models
 class AgentTaskRequest(BaseModel):
     type: str
@@ -69,20 +109,30 @@ def create_api_router() -> APIRouter:
     
     @router.get("/market/price")
     async def get_market_price(symbol: str = "NQ=F"):
-        """Get current market price for any symbol."""
+        """Get current market price for any symbol including crypto."""
         try:
-            ticker = yf.Ticker(symbol)
+            # Handle different symbol formats
+            formatted_symbol = format_symbol_for_yahoo(symbol)
+            ticker = yf.Ticker(formatted_symbol)
             
             # Get recent data for more accurate current price
-            recent_data = ticker.history(period="1d", interval="1m")
+            # Use different periods for crypto vs traditional assets
+            if is_crypto_symbol(symbol):
+                recent_data = ticker.history(period="1d", interval="1h")  # Crypto often has less minute data
+                if recent_data.empty:
+                    recent_data = ticker.history(period="5d", interval="1d")
+            else:
+                recent_data = ticker.history(period="1d", interval="1m")
+                if recent_data.empty:
+                    recent_data = ticker.history(period="1d", interval="5m")
             
             if recent_data.empty:
-                raise HTTPException(status_code=404, detail="No data available for symbol")
+                raise HTTPException(status_code=404, detail=f"No data available for symbol {symbol}")
             
             current_price = recent_data['Close'].iloc[-1]
             session_high = recent_data['High'].max()
             session_low = recent_data['Low'].min()
-            volume = int(recent_data['Volume'].sum())
+            volume = int(recent_data['Volume'].sum()) if not pd.isna(recent_data['Volume'].sum()) else 0
             timestamp = datetime.now().isoformat()
             
             return MarketDataResponse(
@@ -102,19 +152,67 @@ def create_api_router() -> APIRouter:
         """Get current NQ futures price (legacy endpoint)."""
         return await get_market_price("NQ=F")
     
+    @router.get("/market/validate-symbol")
+    async def validate_symbol(symbol: str):
+        """Validate if a symbol is available and return basic info."""
+        try:
+            formatted_symbol = format_symbol_for_yahoo(symbol)
+            ticker = yf.Ticker(formatted_symbol)
+            
+            # Try to get basic info
+            info = ticker.info
+            if not info or len(info) <= 2:  # Empty or minimal info usually means invalid symbol
+                raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
+            
+            # Try to get recent data
+            recent_data = ticker.history(period="5d", interval="1d")
+            if recent_data.empty:
+                raise HTTPException(status_code=404, detail=f"No price data available for {symbol}")
+            
+            symbol_type = "unknown"
+            if is_crypto_symbol(symbol):
+                symbol_type = "cryptocurrency"
+            elif "=F" in symbol or "F=" in symbol:
+                symbol_type = "future"
+            elif "=X" in symbol or any(pair in symbol.upper() for pair in ["EUR", "GBP", "JPY", "AUD", "CAD"]):
+                symbol_type = "forex"
+            elif len(symbol) <= 5 and symbol.isalpha():
+                symbol_type = "stock"
+            
+            return {
+                "symbol": symbol,
+                "formatted_symbol": formatted_symbol,
+                "valid": True,
+                "type": symbol_type,
+                "name": info.get("longName", info.get("shortName", symbol)),
+                "currency": info.get("currency", "USD"),
+                "exchange": info.get("exchange", "Unknown"),
+                "current_price": float(recent_data['Close'].iloc[-1]) if not recent_data.empty else None
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to validate symbol {symbol}: {e}")
+            return {
+                "symbol": symbol,
+                "valid": False,
+                "error": str(e)
+            }
+    
     @router.get("/market/historical")
     async def get_historical_data(
         symbol: str = "NQ=F",
-        period: str = "5d",
-        interval: str = "5m",
-        max_points: int = 500
+        period: str = "1y",
+        interval: str = "1d",
+        max_points: int = 2000
     ):
-        """Get historical market data with extended timeframes."""
+        """Get comprehensive historical market data with extended timeframes."""
         try:
             # Direct implementation bypassing MCP for now
-            ticker = yf.Ticker(symbol)
+            formatted_symbol = format_symbol_for_yahoo(symbol)
+            ticker = yf.Ticker(formatted_symbol)
             
-            # Use longer periods for better chart data
+            # Enhanced period mapping with more comprehensive data
             period_mapping = {
                 "1d": "1d",
                 "5d": "5d", 
@@ -123,19 +221,45 @@ def create_api_router() -> APIRouter:
                 "6mo": "6mo",
                 "1y": "1y",
                 "2y": "2y",
-                "5y": "5y"
+                "5y": "5y",
+                "10y": "10y",
+                "max": "max"  # Get all available data
             }
             
             # Get the mapped period or use provided period
             actual_period = period_mapping.get(period, period)
+            
+            # Adjust interval based on period for optimal data density
+            if actual_period in ["max", "10y", "5y"]:
+                interval = "1d"  # Daily data for long periods
+                max_points = 5000
+            elif actual_period in ["2y", "1y"]:
+                interval = interval if interval in ["1d", "1h"] else "1d"
+                max_points = 3000
+            elif actual_period in ["6mo", "3mo"]:
+                interval = interval if interval in ["1d", "1h", "30m"] else "1h"
+                max_points = 2000
+            else:
+                # Keep original interval for shorter periods
+                max_points = 1000
+            
+            logger.info(f"Fetching {actual_period} data for {symbol} with interval {interval}")
             data = ticker.history(period=actual_period, interval=interval)
             
             if data.empty:
                 raise HTTPException(status_code=404, detail="No historical data available")
             
-            # Limit data points for performance
+            # For very large datasets, sample intelligently rather than just truncating
             if len(data) > max_points:
-                data = data.tail(max_points)
+                if actual_period in ["max", "10y", "5y"]:
+                    # For very long periods, sample every Nth point to maintain shape
+                    step = len(data) // max_points + 1
+                    data = data.iloc[::step]
+                else:
+                    # For shorter periods, take the most recent data
+                    data = data.tail(max_points)
+            
+            logger.info(f"Returning {len(data)} data points for {symbol} from {data.index[0]} to {data.index[-1]}")
             
             # Convert to records for JSON serialization
             ohlcv_data = []
@@ -322,8 +446,14 @@ def create_api_router() -> APIRouter:
             # Send initial historical data
             try:
                 # Direct historical data implementation with extended period
-                ticker = yf.Ticker(symbol)
-                data = ticker.history(period="5d", interval="5m")
+                formatted_symbol = format_symbol_for_yahoo(symbol)
+                ticker = yf.Ticker(formatted_symbol)
+                
+                # Load comprehensive data for WebSocket initial load
+                if is_crypto_symbol(symbol):
+                    data = ticker.history(period="1y", interval="1d")  # 1 year daily for crypto
+                else:
+                    data = ticker.history(period="1y", interval="1d")  # 1 year daily for traditional assets
                 
                 if not data.empty:
                     # Limit data points

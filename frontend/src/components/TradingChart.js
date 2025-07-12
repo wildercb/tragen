@@ -11,6 +11,7 @@ import {
   EyeSlashIcon,
   AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
+import SymbolSearch from './SymbolSearch';
 
 const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, apiBaseUrl = '', onSignalReceived, onSymbolChange }) => {
   const chartContainerRef = useRef(null);
@@ -20,8 +21,9 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
   const indicatorSeriesRefs = useRef({});
   
   const [isPlaying, setIsPlaying] = useState(true);
-  const [showSymbolSelector, setShowSymbolSelector] = useState(false);
-  const [timeframe, setTimeframe] = useState('5m');
+  const [showSymbolSearch, setShowSymbolSearch] = useState(false);
+  const [timeframe, setTimeframe] = useState('1d');
+  const [selectedPeriod, setSelectedPeriod] = useState('1y');
   const [chartType, setChartType] = useState('candlestick');
   const [showDrawingTools, setShowDrawingTools] = useState(false);
   const [showIndicatorSearch, setShowIndicatorSearch] = useState(false);
@@ -61,15 +63,28 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
     { symbol: 'QQQ', display: 'QQQ', name: 'Invesco QQQ Trust', category: 'ETFs' },
   ];
 
-  // Available timeframes
+  // Available timeframes with enhanced data coverage
   const timeframes = [
-    { value: '1m', label: '1m', seconds: 60 },
-    { value: '5m', label: '5m', seconds: 300 },
-    { value: '15m', label: '15m', seconds: 900 },
-    { value: '30m', label: '30m', seconds: 1800 },
-    { value: '1h', label: '1H', seconds: 3600 },
-    { value: '4h', label: '4H', seconds: 14400 },
-    { value: '1d', label: '1D', seconds: 86400 },
+    { value: '1m', label: '1m', seconds: 60, description: '5 days' },
+    { value: '5m', label: '5m', seconds: 300, description: '5 days' },
+    { value: '15m', label: '15m', seconds: 900, description: '1 month' },
+    { value: '30m', label: '30m', seconds: 1800, description: '1 month' },
+    { value: '1h', label: '1H', seconds: 3600, description: '3 months' },
+    { value: '4h', label: '4H', seconds: 14400, description: '1 year' },
+    { value: '1d', label: '1D', seconds: 86400, description: 'All data' },
+  ];
+
+  // Period selection options for manual data loading
+  const periodOptions = [
+    { value: '1d', label: '1D', description: 'Last day' },
+    { value: '5d', label: '5D', description: 'Last 5 days' },
+    { value: '1mo', label: '1M', description: 'Last month' },
+    { value: '3mo', label: '3M', description: 'Last 3 months' },
+    { value: '6mo', label: '6M', description: 'Last 6 months' },
+    { value: '1y', label: '1Y', description: 'Last year' },
+    { value: '2y', label: '2Y', description: 'Last 2 years' },
+    { value: '5y', label: '5Y', description: 'Last 5 years' },
+    { value: 'max', label: 'ALL', description: 'All available data' },
   ];
 
   // Comprehensive TradingView-style indicators including popular public ones
@@ -328,11 +343,37 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
     const fetchHistoricalData = async () => {
       try {
         const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
-        const interval = timeframeConfig?.value || '5m';
+        const interval = timeframeConfig?.value || '1d';
         
-        // Fetch historical data
+        // Use selected period or determine optimal period based on interval
+        let period = selectedPeriod || '1y';
+        let maxPoints = 2000;
+        
+        // Adjust max points based on period
+        if (period === 'max' || period === '10y' || period === '5y') {
+          maxPoints = 5000;
+        } else if (period === '2y' || period === '1y') {
+          maxPoints = 3000;
+        } else if (period === '6mo' || period === '3mo') {
+          maxPoints = 2000;
+        } else {
+          maxPoints = 1000;
+        }
+        
+        // For minute intervals, limit the period to prevent too much data
+        if ((interval === '1m' || interval === '5m') && ['max', '10y', '5y', '2y', '1y'].includes(period)) {
+          period = '5d';
+          maxPoints = 1000;
+        } else if ((interval === '15m' || interval === '30m') && ['max', '10y', '5y', '2y'].includes(period)) {
+          period = '1mo';
+          maxPoints = 1500;
+        }
+        
+        console.log(`Loading ${period} of data with ${interval} interval for ${symbol}`);
+        
+        // Fetch comprehensive historical data
         const historicalResponse = await fetch(
-          `${apiBaseUrl}/api/market/historical?symbol=${symbol}&period=1d&interval=${interval}`
+          `${apiBaseUrl}/api/market/historical?symbol=${symbol}&period=${period}&interval=${interval}&max_points=${maxPoints}`
         );
         
         if (historicalResponse.ok) {
@@ -397,7 +438,7 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
         clearTimeout(reconnectTimeout);
       }
     };
-  }, [isPlaying, timeframe, symbol, apiBaseUrl]);
+  }, [isPlaying, timeframe, selectedPeriod, symbol, apiBaseUrl]);
 
   // Generate mock OHLC data for demonstration
   const generateMockOHLCData = (currentPrice, endTime) => {
@@ -743,7 +784,7 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
           <div className="flex items-center space-x-2">
             <div className="relative">
               <button
-                onClick={() => setShowSymbolSelector(!showSymbolSelector)}
+                onClick={() => setShowSymbolSearch(true)}
                 className="flex items-center space-x-2 px-3 py-1 rounded-md hover:bg-gray-700 transition-colors"
               >
                 <h3 className="text-lg font-semibold text-white">{displaySymbol}</h3>
@@ -752,39 +793,6 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
                 </svg>
               </button>
               
-              {/* Symbol Selector Dropdown */}
-              {showSymbolSelector && (
-                <div className="absolute top-full left-0 z-50 mt-1 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-96 overflow-y-auto">
-                  <div className="p-3 border-b border-gray-700">
-                    <h4 className="text-sm font-medium text-white mb-2">Select Trading Symbol</h4>
-                    <input
-                      type="text"
-                      placeholder="Search symbols..."
-                      className="w-full bg-gray-700 text-white placeholder-gray-400 border border-gray-600 rounded px-3 py-2 text-sm"
-                    />
-                  </div>
-                  {['Futures', 'Stocks', 'ETFs'].map(category => (
-                    <div key={category} className="p-2">
-                      <div className="text-xs text-gray-400 px-2 py-1 font-medium">{category}</div>
-                      {availableSymbols.filter(s => s.category === category).map(symb => (
-                        <button
-                          key={symb.symbol}
-                          onClick={() => {
-                            if (onSymbolChange) onSymbolChange(symb.symbol, symb.display);
-                            setShowSymbolSelector(false);
-                          }}
-                          className={`w-full text-left p-2 rounded hover:bg-gray-700 transition-colors ${
-                            symbol === symb.symbol ? 'bg-blue-600' : ''
-                          }`}
-                        >
-                          <div className="text-sm font-medium text-white">{symb.display}</div>
-                          <div className="text-xs text-gray-400">{symb.name}</div>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
             <div className="flex items-center space-x-1">
               {/* Timeframe Selector */}
@@ -797,8 +805,28 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
+                  title={`${tf.label} - ${tf.description}`}
                 >
                   {tf.label}
+                </button>
+              ))}
+            </div>
+            
+            <div className="flex items-center space-x-1">
+              {/* Period Selector */}
+              <span className="text-xs text-gray-400 px-2">Period:</span>
+              {periodOptions.map((period) => (
+                <button
+                  key={period.value}
+                  onClick={() => setSelectedPeriod(period.value)}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    selectedPeriod === period.value
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                  title={period.description}
+                >
+                  {period.label}
                 </button>
               ))}
             </div>
@@ -1034,6 +1062,16 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
           </div>
         </div>
       </div>
+
+      {/* Symbol Search Modal */}
+      <SymbolSearch
+        isOpen={showSymbolSearch}
+        onClose={() => setShowSymbolSearch(false)}
+        onSymbolSelect={(newSymbol, newDisplaySymbol) => {
+          if (onSymbolChange) onSymbolChange(newSymbol, newDisplaySymbol);
+        }}
+        currentSymbol={symbol}
+      />
     </div>
   );
 };
