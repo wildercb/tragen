@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUpIcon, TrendingDownIcon } from '@heroicons/react/24/outline';
+import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 
 const MarketDataCard = ({ data, loading }) => {
   if (loading) {
@@ -33,9 +33,9 @@ const MarketDataCard = ({ data, loading }) => {
         <h3 className="text-lg font-semibold">NQ Futures</h3>
         <div className="flex items-center">
           {isPositive ? (
-            <TrendingUpIcon className="w-5 h-5 text-green-500" />
+            <ArrowTrendingUpIcon className="w-5 h-5 text-green-500" />
           ) : (
-            <TrendingDownIcon className="w-5 h-5 text-red-500" />
+            <ArrowTrendingDownIcon className="w-5 h-5 text-red-500" />
           )}
         </div>
       </div>

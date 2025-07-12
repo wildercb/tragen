@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 def register_data_tools(mcp_server, config):
     """Register data ingestion tools with the MCP server."""
     
-    @mcp_server.tool()
     async def get_nq_price(symbol: str = "NQ=F") -> Dict[str, Any]:
         """
         Get current NQ futures price and basic info.
@@ -58,7 +57,6 @@ def register_data_tools(mcp_server, config):
             logger.error(f"Error getting NQ price: {e}")
             return {"error": str(e)}
     
-    @mcp_server.tool()
     async def get_historical_data(
         symbol: str = "NQ=F",
         period: str = "1d", 
@@ -122,7 +120,6 @@ def register_data_tools(mcp_server, config):
             logger.error(f"Error getting historical data: {e}")
             return {"error": str(e)}
     
-    @mcp_server.tool()
     async def get_market_hours() -> Dict[str, Any]:
         """
         Get NQ futures market hours and trading session info.
@@ -173,55 +170,54 @@ def register_data_tools(mcp_server, config):
                     "daily_maintenance": "17:00-18:00 ET",
                     "nearly_24_hours": True
                 },
-                "next_open": self._get_next_market_open(now),
-                "next_close": self._get_next_market_close(now)
+                "next_open": _get_next_market_open(now),
+                "next_close": _get_next_market_close(now)
             }
             
         except Exception as e:
             logger.error(f"Error getting market hours: {e}")
             return {"error": str(e)}
     
-    def _get_next_market_open(self, now: datetime) -> str:
-        """Calculate next market open time."""
-        # Simplified calculation - would need more robust implementation
-        weekday = now.weekday()
-        
-        if weekday == 6 and now.hour < 18:  # Sunday before 6 PM
-            next_open = now.replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday < 5 and now.hour >= 17:  # Weekday after close
-            next_open = now.replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday == 5 and now.hour >= 17:  # Friday after close
-            # Next Sunday 6 PM
-            days_to_add = (6 - weekday) % 7 + 1
-            next_open = (now + timedelta(days=days_to_add)).replace(hour=18, minute=0, second=0, microsecond=0)
-        else:
-            next_open = now  # Market is open now
-        
-        return next_open.isoformat()
+def _get_next_market_open(now: datetime) -> str:
+    """Calculate next market open time."""
+    # Simplified calculation - would need more robust implementation
+    weekday = now.weekday()
     
-    def _get_next_market_close(self, now: datetime) -> str:
-        """Calculate next market close time."""
-        weekday = now.weekday()
-        
-        if weekday < 5:  # Monday-Friday
-            if now.hour < 17:
-                next_close = now.replace(hour=17, minute=0, second=0, microsecond=0)
+    if weekday == 6 and now.hour < 18:  # Sunday before 6 PM
+        next_open = now.replace(hour=18, minute=0, second=0, microsecond=0)
+    elif weekday < 5 and now.hour >= 17:  # Weekday after close
+        next_open = now.replace(hour=18, minute=0, second=0, microsecond=0)
+    elif weekday == 5 and now.hour >= 17:  # Friday after close
+        # Next Sunday 6 PM
+        days_to_add = (6 - weekday) % 7 + 1
+        next_open = (now + timedelta(days=days_to_add)).replace(hour=18, minute=0, second=0, microsecond=0)
+    else:
+        next_open = now  # Market is open now
+    
+    return next_open.isoformat()
+    
+def _get_next_market_close(now: datetime) -> str:
+    """Calculate next market close time."""
+    weekday = now.weekday()
+    
+    if weekday < 5:  # Monday-Friday
+        if now.hour < 17:
+            next_close = now.replace(hour=17, minute=0, second=0, microsecond=0)
+        else:
+            # Next day at 5 PM (or Friday if it's Thursday)
+            if weekday == 4:  # Thursday
+                next_close = (now + timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
             else:
-                # Next day at 5 PM (or Friday if it's Thursday)
-                if weekday == 4:  # Thursday
-                    next_close = (now + timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
-                else:
-                    next_close = (now + timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
-        else:
-            # Weekend - next close is Friday 5 PM
-            days_to_friday = (4 - weekday) % 7
-            if days_to_friday == 0 and now.hour >= 17:
-                days_to_friday = 7
-            next_close = (now + timedelta(days=days_to_friday)).replace(hour=17, minute=0, second=0, microsecond=0)
-        
-        return next_close.isoformat()
+                next_close = (now + timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
+    else:
+        # Weekend - next close is Friday 5 PM
+        days_to_friday = (4 - weekday) % 7
+        if days_to_friday == 0 and now.hour >= 17:
+            days_to_friday = 7
+        next_close = (now + timedelta(days=days_to_friday)).replace(hour=17, minute=0, second=0, microsecond=0)
     
-    @mcp_server.tool()
+    return next_close.isoformat()
+    
     async def get_contract_info() -> Dict[str, Any]:
         """
         Get NQ futures contract specifications.
@@ -257,4 +253,11 @@ def register_data_tools(mcp_server, config):
             ]
         }
     
+    # Register tools manually
+    mcp_server.register_tool("get_nq_price", get_nq_price)
+    mcp_server.register_tool("get_historical_data", get_historical_data)
+    mcp_server.register_tool("get_market_hours", get_market_hours)
+    mcp_server.register_tool("get_contract_info", get_contract_info)
+    
     logger.info("Data ingestion tools registered with MCP server")
+    logger.info(f"Registered tools: get_nq_price, get_historical_data, get_market_hours, get_contract_info")

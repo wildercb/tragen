@@ -5,7 +5,20 @@
       "Bash(find:*)",
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(docker-compose :*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose exec backend cat:*)",
+      "Bash(docker-compose stop:*)",
+      "Bash(docker-compose cp:*)",
+      "Bash(docker-compose:*)",
+      "Bash(npm run lint)",
+      "Bash(npm ls:*)",
+      "Bash(npm install:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

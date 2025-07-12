@@ -49,9 +49,9 @@ async def lifespan(app: FastAPI):
     # Initialize WebSocket manager
     ws_manager = WebSocketManager()
     
-    # Start MCP server
+    # Initialize provider manager (don't start the MCP server as it conflicts with FastAPI)
     try:
-        await mcp_server.initialize()
+        await mcp_server.provider_manager.initialize()
         logger.info("MCP Trading Agent Backend started successfully")
         
         # Store in app state for access by routes
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         # Cleanup
         logger.info("Shutting down MCP Trading Agent Backend...")
         if mcp_server:
-            await mcp_server.stop()
+            await mcp_server.provider_manager.cleanup()
         logger.info("Shutdown complete")
 
 def create_app() -> FastAPI:
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",
+            "http://localhost:3001",
             "http://frontend:3000",
             "http://localhost",
             "https://localhost"
@@ -106,8 +107,15 @@ def create_app() -> FastAPI:
             "version": "2.0.0"
         }
     
-    # Include API router
+    # Include API router (includes WebSocket endpoints)
     app.include_router(create_api_router(), prefix="/api")
+    
+    # Add WebSocket support for chart data
+    @app.websocket("/ws/market/{symbol}")
+    async def websocket_market_endpoint(websocket, symbol: str):
+        """WebSocket endpoint for real-time market data."""
+        # This will be handled by the API router
+        pass
     
     return app
 

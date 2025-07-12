@@ -17,15 +17,15 @@ __version__ = "2.0.0"
 __author__ = "NQ Trading Agent Team"
 
 from .server import TradingMCPServer
-from .agents import TradingAgent, AnalysisAgent, ExecutionAgent
+from .agents import AnalysisAgent, ExecutionAgent, RiskAgent
 from .providers import LLMProviderManager
 from .tools import register_all_tools
 
 __all__ = [
     "TradingMCPServer",
-    "TradingAgent", 
     "AnalysisAgent",
-    "ExecutionAgent",
+    "ExecutionAgent", 
+    "RiskAgent",
     "LLMProviderManager",
     "register_all_tools"
 ]

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Frontend - React Development Server
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000
+      - NODE_ENV=development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    networks:
+      - trading-network
+
+  # Backend - FastAPI MCP Server
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - NODE_ENV=development
+    volumes:
+      - ./mcp_trading_agent:/app/mcp_trading_agent
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - trading-network
+
+networks:
+  trading-network:
+    driver: bridge

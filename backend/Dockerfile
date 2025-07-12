@@ -10,7 +10,21 @@ RUN apt-get update && apt-get install -y \
     g++ \
     make \
     curl \
+    automake \
     && rm -rf /var/lib/apt/lists/*
+
+# Install TA-Lib
+RUN curl -L https://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz -o ta-lib-0.4.0-src.tar.gz && \
+    tar -zxvf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib && \
+    cp $(automake --print-libdir)/config.guess . && \
+    cp $(automake --print-libdir)/config.sub . && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    ln -s /usr/lib/libta_lib.so /usr/lib/libta-lib.so && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
 # Copy requirements first for better caching
 COPY requirements.txt .

@@ -12,9 +12,12 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from ..server import TradingMCPServer  # Import server for type hinting
+from typing import TYPE_CHECKING
 from ..providers import LLMProviderManager
-from ..agents import create_agent  # Corrected import from parent agents module
+from .factory import create_agent  # Import from factory module
+
+if TYPE_CHECKING:
+    from ..server import TradingMCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ class AgentManager:
     Manages trading agents for the MCP server.
     """
     
-    def __init__(self, server: TradingMCPServer, provider_manager: LLMProviderManager):
+    def __init__(self, server: "TradingMCPServer", provider_manager: LLMProviderManager):
         self.server = server
         self.provider_manager = provider_manager
         self.agents: Dict[str, Any] = {}
@@ -39,7 +42,7 @@ class AgentManager:
         config['loaded_guides'] = guides
         
         agent_id = f"{agent_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        agent = await create_agent(
+        agent = create_agent(
             agent_type=agent_type,
             config=config,
             mcp_server=self.server,
