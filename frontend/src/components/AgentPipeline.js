@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlayIcon,
@@ -8,15 +8,23 @@ import {
   ChartBarIcon,
   BoltIcon,
   PlusIcon,
+  ChatBubbleLeftRightIcon,
+  PaperAirplaneIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
-const AgentPipeline = () => {
+const AgentPipeline = ({ currentSymbol = 'NQ=F', chartData = [], onSignalCreated }) => {
   const [agents, setAgents] = useState([]);
   const [agentThoughts, setAgentThoughts] = useState({});
   const [tradeSignals, setTradeSignals] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [selectedModel, setSelectedModel] = useState('ollama:phi3:mini');
   const [availableModels, setAvailableModels] = useState([]);
+  const [chatHistory, setChatHistory] = useState({});
+  const [activeChat, setActiveChat] = useState(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const chatEndRef = useRef(null);
 
   // Fetch agents and models on component mount
   useEffect(() => {
@@ -24,17 +32,111 @@ const AgentPipeline = () => {
     fetchAvailableModels();
   }, []);
 
-  // Start live agent monitoring when running
+  // Check if market is open for NQ futures
+  const isMarketOpen = () => {
+    const now = new Date();
+    const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+    const day = et.getDay(); // 0=Sunday, 6=Saturday
+    const hour = et.getHours();
+    
+    // NQ trades nearly 24/5: Sunday 6 PM - Friday 5 PM ET
+    // Daily maintenance: 5-6 PM ET
+    
+    if (day === 0) { // Sunday
+      return hour >= 18; // 6 PM or later
+    } else if (day >= 1 && day <= 4) { // Monday-Thursday
+      return hour < 17 || hour >= 18; // Before 5 PM or after 6 PM
+    } else if (day === 5) { // Friday
+      return hour < 17; // Before 5 PM
+    }
+    return false; // Saturday
+  };
+
+  // Real agent analysis using current chart data
+  const triggerAgentAnalysis = useCallback(async (agentId, symbol, chartData) => {
+    if (!chartData || chartData.length === 0) return;
+    
+    try {
+      // Get the last 20 candles for analysis
+      const recentData = chartData.slice(-20);
+      const currentPrice = recentData[recentData.length - 1]?.close;
+      
+      const response = await fetch('/api/agents/analyze-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentId,
+          symbol: symbol,
+          chart_data: recentData,
+          current_price: currentPrice,
+          model_provider: selectedModel.split(':')[0] || 'ollama',
+          model_name: selectedModel.split(':')[1] || 'phi3:mini'
+        })
+      });
+      
+      if (response.ok) {
+        const analysis = await response.json();
+        
+        // Update agent thoughts with real analysis
+        setAgentThoughts(prev => ({
+          ...prev,
+          [agentId]: {
+            ...prev[agentId],
+            currentThought: analysis.reasoning || 'Analysis complete',
+            timestamp: new Date(),
+            status: 'active',
+            lastAnalysis: analysis
+          }
+        }));
+        
+        // If analysis includes a trading signal, add it
+        if (analysis.recommendation && analysis.recommendation !== 'HOLD') {
+          const signal = {
+            id: Date.now(),
+            type: analysis.recommendation.toLowerCase(),
+            confidence: analysis.confidence / 100,
+            price: currentPrice,
+            reason: analysis.reasoning,
+            timestamp: new Date(),
+            agent: agentId,
+            symbol: symbol
+          };
+          
+          setTradeSignals(prev => [signal, ...prev.slice(0, 9)]);
+          
+          // Notify parent component to add signal to chart
+          if (onSignalCreated) {
+            onSignalCreated(signal);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to trigger agent analysis:', error);
+      setAgentThoughts(prev => ({
+        ...prev,
+        [agentId]: {
+          ...prev[agentId],
+          currentThought: 'Analysis failed - connection error',
+          timestamp: new Date(),
+          status: 'error'
+        }
+      }));
+    }
+  }, [selectedModel, onSignalCreated]);
+
+  // Start real agent monitoring when running
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isRunning || agents.length === 0 || chartData.length === 0) return;
 
     const interval = setInterval(() => {
-      // Simulate agent thoughts and analysis
-      simulateAgentActivity();
-    }, 3000);
+      // Trigger real analysis for each agent
+      agents.forEach(agent => {
+        triggerAgentAnalysis(agent.id, currentSymbol, chartData);
+      });
+    }, 30000); // Analyze every 30 seconds to avoid rate limiting
 
     return () => clearInterval(interval);
-  }, [isRunning, simulateAgentActivity]);
+  }, [isRunning, agents, chartData, currentSymbol, triggerAgentAnalysis]);
 
   const fetchAgents = async () => {
     try {
@@ -64,7 +166,7 @@ const AgentPipeline = () => {
         body: JSON.stringify({
           agent_type: agentType,
           config: {
-            symbol: 'NQ=F',
+            symbol: currentSymbol,
             model: selectedModel,
             temperature: agentType === 'risk' ? 0.0 : 0.1,
           },
@@ -94,55 +196,108 @@ const AgentPipeline = () => {
       console.error('Failed to switch model:', error);
     }
   };
-
-  const simulateAgentActivity = useCallback(() => {
-    const thoughts = [
-      'Analyzing price action and volume trends...',
-      'RSI showing oversold conditions at 28.4',
-      'Bollinger Bands suggesting potential breakout',
-      'Volume spike detected - confirming momentum',
-      'Risk assessment: Position size within limits',
-      'Support level holding at 22,850',
-      'MACD showing bullish divergence',
-      'Monitoring for entry signal...',
-      'Market sentiment analysis complete',
-      'Pattern recognition: Double bottom forming',
-    ];
-
-    const signals = [
-      { type: 'buy', confidence: 0.85, price: 22875, reason: 'Bullish breakout pattern' },
-      { type: 'sell', confidence: 0.78, price: 22925, reason: 'Resistance level reached' },
-      { type: 'hold', confidence: 0.65, price: 22900, reason: 'Consolidation phase' },
-    ];
-
-    // Update agent thoughts
-    agents.forEach(agent => {
-      const randomThought = thoughts[Math.floor(Math.random() * thoughts.length)];
-      setAgentThoughts(prev => ({
-        ...prev,
-        [agent.id]: {
-          ...prev[agent.id],
-          currentThought: randomThought,
+  
+  // Chat functionality
+  const sendMessage = async (agentId, message) => {
+    if (!message.trim()) return;
+    
+    setIsTyping(true);
+    
+    // Add user message to chat history
+    const userMessage = {
+      id: Date.now(),
+      sender: 'user',
+      message: message.trim(),
+      timestamp: new Date()
+    };
+    
+    setChatHistory(prev => ({
+      ...prev,
+      [agentId]: [...(prev[agentId] || []), userMessage]
+    }));
+    
+    setChatMessage('');
+    
+    try {
+      // Send message to agent for response
+      const response = await fetch('/api/agents/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentId,
+          message: message,
+          symbol: currentSymbol,
+          chart_data: chartData.slice(-20), // Last 20 candles for context
+          chat_history: chatHistory[agentId] || []
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Add agent response to chat history
+        const agentMessage = {
+          id: Date.now() + 1,
+          sender: 'agent',
+          message: result.response,
           timestamp: new Date(),
-          status: Math.random() > 0.8 ? 'analyzing' : 'active',
+          analysis: result.analysis,
+          signal: result.signal
+        };
+        
+        setChatHistory(prev => ({
+          ...prev,
+          [agentId]: [...(prev[agentId] || []), agentMessage]
+        }));
+        
+        // If agent created a signal, add it to the chart
+        if (result.signal && onSignalCreated) {
+          onSignalCreated({
+            ...result.signal,
+            agent: agentId,
+            symbol: currentSymbol,
+            timestamp: new Date()
+          });
         }
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      
+      // Add error message
+      const errorMessage = {
+        id: Date.now() + 1,
+        sender: 'agent',
+        message: 'Sorry, I\'m having trouble connecting right now. Please try again.',
+        timestamp: new Date(),
+        error: true
+      };
+      
+      setChatHistory(prev => ({
+        ...prev,
+        [agentId]: [...(prev[agentId] || []), errorMessage]
       }));
-    });
-
-    // Occasionally generate trade signals
-    if (Math.random() > 0.7) {
-      const signal = signals[Math.floor(Math.random() * signals.length)];
-      setTradeSignals(prev => [
-        {
-          ...signal,
-          id: Date.now(),
-          timestamp: new Date(),
-          agent: agents[Math.floor(Math.random() * agents.length)]?.id || 'unknown',
-        },
-        ...prev.slice(0, 9) // Keep last 10 signals
-      ]);
+    } finally {
+      setIsTyping(false);
     }
-  }, [agents]);
+  };
+  
+  // Scroll to bottom of chat
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, activeChat]);
+  
+  // Quick action to request analysis
+  const requestAnalysis = async (agentId) => {
+    await sendMessage(agentId, `Please analyze the current ${currentSymbol} chart and provide your trading recommendation with reasoning.`);
+  };
+  
+  // Quick action to place signal
+  const requestSignal = async (agentId, signalType) => {
+    const currentPrice = chartData.length > 0 ? chartData[chartData.length - 1].close : 0;
+    await sendMessage(agentId, `Based on the current ${currentSymbol} chart analysis, please place a ${signalType.toUpperCase()} signal at the current price of $${currentPrice}. Explain your reasoning.`);
+  };
 
   const getAgentIcon = (type) => {
     switch (type) {
@@ -160,11 +315,24 @@ const AgentPipeline = () => {
   const getSignalColor = (type) => {
     switch (type) {
       case 'buy':
-        return 'text-trading-buy border-trading-buy bg-trading-buy bg-opacity-10';
+        return 'text-green-400 border-green-500 bg-green-500 bg-opacity-10';
       case 'sell':
-        return 'text-trading-sell border-trading-sell bg-trading-sell bg-opacity-10';
+        return 'text-red-400 border-red-500 bg-red-500 bg-opacity-10';
       default:
-        return 'text-dim-grey-400 border-dim-grey-600 bg-dim-grey-600 bg-opacity-10';
+        return 'text-gray-400 border-gray-600 bg-gray-600 bg-opacity-10';
+    }
+  };
+  
+  const getAgentStatusColor = (status) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-500';
+      case 'analyzing':
+        return 'bg-yellow-500 animate-pulse';
+      case 'error':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
@@ -179,6 +347,12 @@ const AgentPipeline = () => {
           </h2>
           
           <div className="flex items-center space-x-4">
+            {/* Current Symbol Display */}
+            <div className="text-sm text-gray-300">
+              <span className="text-gray-500">Trading:</span>
+              <span className="font-semibold text-blue-400 ml-1">{currentSymbol}</span>
+            </div>
+            
             {/* Model Selector */}
             <select
               value={selectedModel}
@@ -186,7 +360,7 @@ const AgentPipeline = () => {
                 const [provider, model] = e.target.value.split(':');
                 switchModel(provider, model);
               }}
-              className="bg-eerie-black-secondary border border-dim-grey-600 rounded-lg px-3 py-2 text-white text-sm focus:border-robin-egg-500 focus:outline-none"
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
             >
               {availableModels.map((model) => (
                 <option key={`${model.provider}:${model.name}`} value={`${model.provider}:${model.name}`}>
@@ -200,19 +374,19 @@ const AgentPipeline = () => {
               onClick={() => setIsRunning(!isRunning)}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
                 isRunning
-                  ? 'bg-trading-sell hover:bg-red-600 text-white'
-                  : 'bg-trading-buy hover:bg-green-600 text-white'
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
               }`}
             >
               {isRunning ? (
                 <>
                   <PauseIcon className="w-4 h-4" />
-                  <span>Stop Pipeline</span>
+                  <span>Stop Analysis</span>
                 </>
               ) : (
                 <>
                   <PlayIcon className="w-4 h-4" />
-                  <span>Start Pipeline</span>
+                  <span>Start Analysis</span>
                 </>
               )}
             </button>
@@ -225,7 +399,7 @@ const AgentPipeline = () => {
             <button
               key={type}
               onClick={() => createAgent(type)}
-              className="flex items-center space-x-2 px-3 py-2 bg-robin-egg-500 hover:bg-robin-egg-600 rounded-lg text-white text-sm transition-colors"
+              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors"
             >
               <PlusIcon className="w-4 h-4" />
               <span>Create {type} Agent</span>
@@ -234,11 +408,11 @@ const AgentPipeline = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Active Agents */}
-        <div className="bg-eerie-black-tertiary rounded-lg border border-dim-grey-700">
-          <div className="p-4 border-b border-dim-grey-700">
-            <h3 className="text-lg font-semibold text-white">Active Agents ({agents.length})</h3>
+        <div className="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700">
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold text-white">AI Trading Agents ({agents.length})</h3>
           </div>
           
           <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
@@ -250,46 +424,74 @@ const AgentPipeline = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ delay: index * 0.1 }}
-                  className="bg-eerie-black-secondary rounded-lg p-4 border border-dim-grey-600"
+                  className="bg-gray-700 rounded-lg p-4 border border-gray-600"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-3">
-                      <div className="text-robin-egg-500">
+                      <div className="text-blue-400">
                         {getAgentIcon(agent.type)}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className="font-medium text-white capitalize">
                           {agent.type} Agent
                         </h4>
-                        <p className="text-xs text-dim-grey-400">
-                          ID: {agent.id}
+                        <p className="text-xs text-gray-400">
+                          {currentSymbol} • {selectedModel.split(':')[1] || 'AI Model'}
                         </p>
                       </div>
                     </div>
                     
                     <div className="flex items-center space-x-2">
                       <div className={`w-2 h-2 rounded-full ${
-                        agentThoughts[agent.id]?.status === 'analyzing' 
-                          ? 'bg-yellow-500 animate-pulse' 
-                          : 'bg-trading-buy'
+                        getAgentStatusColor(agentThoughts[agent.id]?.status || 'idle')
                       }`} />
-                      <span className="text-xs text-dim-grey-400">
+                      <span className="text-xs text-gray-400">
                         {agentThoughts[agent.id]?.status || 'idle'}
                       </span>
+                      <button
+                        onClick={() => setActiveChat(agent.id)}
+                        className="p-1 text-gray-400 hover:text-blue-400 transition-colors"
+                        title="Chat with agent"
+                      >
+                        <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                   
+                  {/* Agent Actions */}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => requestAnalysis(agent.id)}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                    >
+                      Analyze Chart
+                    </button>
+                    <button
+                      onClick={() => requestSignal(agent.id, 'buy')}
+                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                    >
+                      Buy Signal
+                    </button>
+                    <button
+                      onClick={() => requestSignal(agent.id, 'sell')}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                    >
+                      Sell Signal
+                    </button>
+                  </div>
+                  
+                  {/* Last Analysis */}
                   {agentThoughts[agent.id]?.currentThought && (
                     <motion.div
                       key={agentThoughts[agent.id].timestamp}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="bg-eerie-black-primary rounded-lg p-3 border border-dim-grey-700"
+                      className="bg-gray-800 rounded-lg p-3 border border-gray-600 mt-3"
                     >
-                      <p className="text-sm text-dim-grey-300">
+                      <p className="text-sm text-gray-300">
                         {agentThoughts[agent.id].currentThought}
                       </p>
-                      <p className="text-xs text-dim-grey-500 mt-1">
+                      <p className="text-xs text-gray-500 mt-1">
                         {agentThoughts[agent.id].timestamp?.toLocaleTimeString()}
                       </p>
                     </motion.div>
@@ -299,65 +501,111 @@ const AgentPipeline = () => {
             </AnimatePresence>
             
             {agents.length === 0 && (
-              <div className="text-center py-8 text-dim-grey-400">
+              <div className="text-center py-8 text-gray-400">
                 <CpuChipIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>No active agents</p>
-                <p className="text-sm mt-1">Create agents to start analysis</p>
+                <p className="text-sm mt-1">Create agents to start real-time analysis</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Trade Signals */}
-        <div className="bg-eerie-black-tertiary rounded-lg border border-dim-grey-700">
-          <div className="p-4 border-b border-dim-grey-700">
-            <h3 className="text-lg font-semibold text-white">Live Trade Signals</h3>
+        {/* Agent Chat Interface */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700">
+          <div className="p-4 border-b border-gray-700">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Agent Chat</h3>
+              {activeChat && (
+                <button
+                  onClick={() => setActiveChat(null)}
+                  className="text-gray-400 hover:text-white p-1"
+                >
+                  <XMarkIcon className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
           
-          <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-            <AnimatePresence>
-              {tradeSignals.map((signal) => (
-                <motion.div
-                  key={signal.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className={`rounded-lg p-4 border ${getSignalColor(signal.type)}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-semibold uppercase">
-                        {signal.type}
-                      </span>
-                      <span className="text-sm opacity-75">
-                        ${signal.price}
-                      </span>
-                    </div>
-                    <div className="text-sm opacity-75">
-                      {(signal.confidence * 100).toFixed(0)}% confidence
+          {activeChat ? (
+            <div className="flex flex-col h-96">
+              {/* Chat Messages */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                {(chatHistory[activeChat] || []).map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${
+                      message.sender === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    <div
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                        message.sender === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : message.error
+                          ? 'bg-red-600 text-white'
+                          : 'bg-gray-700 text-gray-100'
+                      }`}
+                    >
+                      <p className="text-sm">{message.message}</p>
+                      <p className="text-xs opacity-75 mt-1">
+                        {message.timestamp.toLocaleTimeString()}
+                      </p>
+                      {message.signal && (
+                        <div className="mt-2 p-2 bg-gray-800 rounded text-xs">
+                          <strong>Signal:</strong> {message.signal.type.toUpperCase()} at ${message.signal.price}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
-                  <p className="text-sm opacity-90 mb-2">
-                    {signal.reason}
-                  </p>
-                  
-                  <div className="flex items-center justify-between text-xs opacity-60">
-                    <span>Agent: {signal.agent}</span>
-                    <span>{signal.timestamp.toLocaleTimeString()}</span>
+                ))}
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-700 text-gray-100 px-4 py-2 rounded-lg">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      </div>
+                    </div>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            
-            {tradeSignals.length === 0 && (
-              <div className="text-center py-8 text-dim-grey-400">
-                <BoltIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No trade signals yet</p>
-                <p className="text-sm mt-1">Start the pipeline to see signals</p>
+                )}
+                <div ref={chatEndRef} />
               </div>
-            )}
-          </div>
+              
+              {/* Chat Input */}
+              <div className="p-4 border-t border-gray-700">
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage(activeChat, chatMessage);
+                      }
+                    }}
+                    placeholder="Ask about the chart, request analysis, or place signals..."
+                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    disabled={isTyping}
+                  />
+                  <button
+                    onClick={() => sendMessage(activeChat, chatMessage)}
+                    disabled={!chatMessage.trim() || isTyping}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                  >
+                    <PaperAirplaneIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-gray-400">
+              <ChatBubbleLeftRightIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>Select an agent to start chatting</p>
+              <p className="text-sm mt-1">Ask about market analysis, request signals, or get trading insights</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

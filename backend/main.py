@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Main entry point for the MCP Trading Agent Backend
-=================================================
+Main entry point for the Tragen Trading Agent Backend
+====================================================
 
 FastAPI server that provides:
-- MCP server with trading tools
-- REST API for frontend communication
+- Production trading system with AI agents
+- REST API for frontend communication  
 - WebSocket support for real-time updates
 - Agent management and orchestration
+- Live training interface
+- Comprehensive monitoring and safety systems
 """
 
 import asyncio
@@ -15,14 +17,15 @@ import logging
 import os
 import signal
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from mcp_trading_agent.server import TradingMCPServer
-from mcp_trading_agent.api import create_api_router
-from mcp_trading_agent.websocket import WebSocketManager
+# Import production server components
+from mcp_trading_agent.production_server import ProductionTradingServer
 
 # Configure logging
 logging.basicConfig(
@@ -32,90 +35,93 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global variables for graceful shutdown
-mcp_server = None
-ws_manager = None
+production_server = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    global mcp_server, ws_manager
+    global production_server
     
-    logger.info("Starting MCP Trading Agent Backend...")
+    logger.info("🚀 Starting Tragen Production Trading Backend...")
     
-    # Initialize MCP server
+    # Initialize production server
     config_path = os.getenv("CONFIG_PATH", "mcp_trading_agent/config/config.yaml")
-    mcp_server = TradingMCPServer(config_path)
+    production_server = ProductionTradingServer(config_path)
     
-    # Initialize WebSocket manager
-    ws_manager = WebSocketManager()
-    
-    # Initialize provider manager (don't start the MCP server as it conflicts with FastAPI)
     try:
-        await mcp_server.provider_manager.initialize()
-        logger.info("MCP Trading Agent Backend started successfully")
+        # Initialize all production components
+        await production_server.initialize()
+        
+        # Start monitoring
+        await production_server.monitor.start_monitoring()
+        
+        logger.info("✅ Tragen Production Trading Backend started successfully")
         
         # Store in app state for access by routes
-        app.state.mcp_server = mcp_server
-        app.state.ws_manager = ws_manager
+        app.state.production_server = production_server
         
         yield
         
     except Exception as e:
-        logger.error(f"Failed to start MCP server: {e}")
+        logger.error(f"❌ Failed to start production server: {e}")
         raise
     finally:
         # Cleanup
-        logger.info("Shutting down MCP Trading Agent Backend...")
-        if mcp_server:
-            await mcp_server.provider_manager.cleanup()
-        logger.info("Shutdown complete")
+        logger.info("🛑 Shutting down Tragen Production Trading Backend...")
+        if production_server:
+            await production_server.cleanup()
+        logger.info("✅ Shutdown complete")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     
-    app = FastAPI(
-        title="NQ Trading Agent API",
-        description="Advanced NQ futures trading with AI analysis - Backend API",
-        version="2.0.0",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        lifespan=lifespan
-    )
+    # Create app with integrated production server
+    production_server_instance = ProductionTradingServer()
+    app = production_server_instance.app
     
-    # CORS middleware for frontend communication
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://frontend:3000",
-            "http://localhost",
-            "https://localhost"
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Update app metadata
+    app.title = "Tragen Production Trading API"
+    app.description = "Production-ready AI trading agent platform with comprehensive safety systems"
+    app.version = "1.0.0 Production"
+    app.docs_url = "/api/docs"
+    app.redoc_url = "/api/redoc"
     
-    # Health check endpoint
+    # Set lifespan
+    app.router.lifespan_context = lifespan
+    
+    # Serve static files from frontend build (if available)
+    frontend_build_path = Path(__file__).parent.parent / "frontend" / "build"
+    if frontend_build_path.exists():
+        app.mount("/static", StaticFiles(directory=str(frontend_build_path / "static")), name="static")
+        
+        # Serve React app
+        @app.get("/")
+        async def serve_react_app():
+            """Serve the React frontend."""
+            from fastapi.responses import FileResponse
+            return FileResponse(str(frontend_build_path / "index.html"))
+    
+    # Health check endpoint  
     @app.get("/health")
     async def health_check():
-        """Health check endpoint for Docker."""
-        return {
-            "status": "healthy",
-            "service": "mcp-trading-agent-backend",
-            "version": "2.0.0"
-        }
-    
-    # Include API router (includes WebSocket endpoints)
-    app.include_router(create_api_router(), prefix="/api")
-    
-    # Add WebSocket support for chart data
-    @app.websocket("/ws/market/{symbol}")
-    async def websocket_market_endpoint(websocket, symbol: str):
-        """WebSocket endpoint for real-time market data."""
-        # This will be handled by the API router
-        pass
+        """Enhanced health check endpoint."""
+        try:
+            system_status = await production_server.get_system_status() if production_server else {}
+            return {
+                "status": "healthy",
+                "service": "tragen-production-backend", 
+                "version": "1.0.0",
+                "system_status": system_status.get('system_status', 'unknown'),
+                "active_agents": system_status.get('active_agents', 0),
+                "trading_mode": system_status.get('trading_mode', 'unknown')
+            }
+        except Exception as e:
+            return {
+                "status": "degraded",
+                "service": "tragen-production-backend",
+                "version": "1.0.0", 
+                "error": str(e)
+            }
     
     return app
 
@@ -133,8 +139,10 @@ async def main():
     setup_signal_handlers()
     
     # Get configuration from environment
-    host = os.getenv("MCP_HOST", "0.0.0.0")
-    port = int(os.getenv("MCP_PORT", "8000"))
+    host = os.getenv("TRAGEN_HOST", "0.0.0.0")
+    port = int(os.getenv("TRAGEN_PORT", "8000"))
+    
+    logger.info(f"🌐 Starting Tragen server on {host}:{port}")
     
     # Create application
     app = create_app()
@@ -153,11 +161,12 @@ async def main():
     server = uvicorn.Server(config)
     
     try:
+        logger.info("🎯 Tragen Production Trading System ready!")
         await server.serve()
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt, shutting down...")
+        logger.info("👋 Received keyboard interrupt, shutting down gracefully...")
     except Exception as e:
-        logger.error(f"Server error: {e}")
+        logger.error(f"❌ Server error: {e}")
         raise
 
 if __name__ == "__main__":

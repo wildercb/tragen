@@ -18,7 +18,16 @@
       "Bash(npm run lint)",
       "Bash(npm ls:*)",
       "Bash(npm install:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(timeout:*)",
+      "Bash(pkill:*)",
+      "Bash(PYTHONPATH=/Users/wilderbaldwin/Dev/tragen python3 backend/main.py)",
+      "Bash(pip3 install:*)",
+      "Bash(grep:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }

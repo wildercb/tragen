@@ -11,7 +11,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
-from fastmcp import FastMCP
+# from fastmcp import FastMCP  # Disabled for now
 from .tools import register_all_tools
 from .providers import LLMProviderManager
 from .config import TradingConfig
@@ -33,7 +33,7 @@ class TradingMCPServer:
     def __init__(self, config_path: Optional[str] = None):
         """Initialize the MCP server."""
         self.config = TradingConfig(config_path)
-        self.mcp = FastMCP("NQ Trading Agent")
+        # self.mcp = FastMCP("NQ Trading Agent")  # Disabled for now
         self.provider_manager = LLMProviderManager(self.config.llm)
         self.agent_manager = AgentManager(self, self.provider_manager)  # Use new AgentManager
         self.tool_registry = {}  # Manual tool registry
@@ -44,10 +44,10 @@ class TradingMCPServer:
         logger.info("Setting up MCP server...")
         
         # Register all trading tools
-        register_all_tools(self.mcp, self.config)
+        # register_all_tools(self.mcp, self.config)  # Disabled for now
         
         # Setup server metadata
-        self.mcp.server_info = {
+        self.server_info = {
             "name": "NQ Trading Agent",
             "version": "2.0.0",
             "description": "Advanced NQ futures trading with AI analysis",
@@ -76,7 +76,8 @@ class TradingMCPServer:
         await self.provider_manager.initialize()
         
         # Start the FastMCP server
-        await self.mcp.run(host=host, port=port)
+        # await self.mcp.run(host=host, port=port)  # Disabled for now
+        logger.info("MCP server started (placeholder mode)")
     
     async def stop(self):
         """Stop the MCP server and cleanup."""

@@ -1,4 +1,4 @@
-# NQ Trading Agent v2.0 - MCP Architecture
+# Tragen - Advanced Trading Agent System v2.0
 
 > **Advanced NQ Futures Trading with AI Analysis using Model Context Protocol (MCP)**
 
@@ -9,7 +9,7 @@ A comprehensive, containerized trading system built on MCP (Model Context Protoc
 ```bash
 # Clone and start the entire system
 git clone <repository-url>
-cd nq_trading_agent
+cd tragen
 docker-compose up -d
 
 # Access the trading interface
@@ -1448,7 +1448,7 @@ docker-compose logs -f | grep -E "(ERROR|WARN)"
 1. **Clone Repository**
 ```bash
 git clone <repository-url>
-cd nq_trading_agent
+cd tragen
 ```
 
 2. **Setup Development Environment**

@@ -11,9 +11,9 @@ import {
   EyeSlashIcon,
   AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
-import SymbolSearch from './SymbolSearch';
+import DynamicSymbolSearch from './DynamicSymbolSearch';
 
-const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, apiBaseUrl = '', onSignalReceived, onSymbolChange }) => {
+const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000', onSignalReceived, onSymbolChange, onChartDataUpdate }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
@@ -22,8 +22,8 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
   
   const [isPlaying, setIsPlaying] = useState(true);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
-  const [timeframe, setTimeframe] = useState('1d');
-  const [selectedPeriod, setSelectedPeriod] = useState('1y');
+  const [timeframe, setTimeframe] = useState('5m');
+  const [selectedPeriod, setSelectedPeriod] = useState('1d');
   const [chartType, setChartType] = useState('candlestick');
   const [showDrawingTools, setShowDrawingTools] = useState(false);
   const [showIndicatorSearch, setShowIndicatorSearch] = useState(false);
@@ -48,30 +48,24 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
   const [currentPrice, setCurrentPrice] = useState(null);
   const [priceChange, setPriceChange] = useState(0);
   const [limitOrders, setLimitOrders] = useState([]);
-  const [, setChartData] = useState([]);
+  const [lastUpdateTime, setLastUpdateTime] = useState(0);
   
-  // Available symbols for future multi-asset support
-  const availableSymbols = [
-    { symbol: 'NQ=F', display: 'NQ', name: 'NASDAQ-100 E-mini Future', category: 'Futures' },
-    { symbol: 'ES=F', display: 'ES', name: 'S&P 500 E-mini Future', category: 'Futures' },
-    { symbol: 'YM=F', display: 'YM', name: 'Dow Jones E-mini Future', category: 'Futures' },
-    { symbol: 'RTY=F', display: 'RTY', name: 'Russell 2000 E-mini Future', category: 'Futures' },
-    { symbol: 'AAPL', display: 'AAPL', name: 'Apple Inc.', category: 'Stocks' },
-    { symbol: 'TSLA', display: 'TSLA', name: 'Tesla Inc.', category: 'Stocks' },
-    { symbol: 'NVDA', display: 'NVDA', name: 'NVIDIA Corporation', category: 'Stocks' },
-    { symbol: 'SPY', display: 'SPY', name: 'SPDR S&P 500 ETF', category: 'ETFs' },
-    { symbol: 'QQQ', display: 'QQQ', name: 'Invesco QQQ Trust', category: 'ETFs' },
-  ];
 
-  // Available timeframes with enhanced data coverage
+  // Candlestick timeframes (intervals)
   const timeframes = [
-    { value: '1m', label: '1m', seconds: 60, description: '5 days' },
-    { value: '5m', label: '5m', seconds: 300, description: '5 days' },
-    { value: '15m', label: '15m', seconds: 900, description: '1 month' },
-    { value: '30m', label: '30m', seconds: 1800, description: '1 month' },
-    { value: '1h', label: '1H', seconds: 3600, description: '3 months' },
-    { value: '4h', label: '4H', seconds: 14400, description: '1 year' },
-    { value: '1d', label: '1D', seconds: 86400, description: 'All data' },
+    { value: '1m', label: '1 min', seconds: 60 },
+    { value: '3m', label: '3 min', seconds: 180 },
+    { value: '5m', label: '5 min', seconds: 300 },
+    { value: '15m', label: '15 min', seconds: 900 },
+    { value: '30m', label: '30 min', seconds: 1800 },
+    { value: '1h', label: '1 hour', seconds: 3600 },
+    { value: '2h', label: '2 hour', seconds: 7200 },
+    { value: '4h', label: '4 hour', seconds: 14400 },
+    { value: '6h', label: '6 hour', seconds: 21600 },
+    { value: '12h', label: '12 hour', seconds: 43200 },
+    { value: '1d', label: 'Day', seconds: 86400 },
+    { value: '1wk', label: 'Week', seconds: 604800 },
+    { value: '1mo', label: 'Month', seconds: 2629746 },
   ];
 
   // Period selection options for manual data loading
@@ -296,6 +290,14 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
     };
   }, [height, chartType]);
 
+  // Reset candle state when symbol or timeframe changes
+  useEffect(() => {
+    setCurrentCandle(null);
+    setLastCandleTime(null);
+    setCurrentPrice(null);
+    setPriceChange(0);
+  }, [symbol, timeframe]);
+
   // WebSocket connection for real-time data
   useEffect(() => {
     if (!isPlaying || !candlestickSeriesRef.current) return;
@@ -306,23 +308,101 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
     const connectWebSocket = () => {
       try {
         // Try to connect to WebSocket for real-time data
-        ws = new WebSocket(`ws://localhost:8001/ws/market/${symbol}`);
+        const wsBaseUrl = process.env.REACT_APP_WS_BASE_URL || 'ws://localhost:8000';
+        const wsUrl = `${wsBaseUrl}/api/ws/market/${encodeURIComponent(symbol)}`;
+        console.log(`🔄 Attempting WebSocket connection to: ${wsUrl}`);
+        ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
-          console.log('WebSocket connected for real-time data');
+          console.log(`🔗 WebSocket connected for ${symbol} real-time data`);
         };
 
         ws.onmessage = (event) => {
           const data = JSON.parse(event.data);
+          console.log(`📥 WebSocket received: ${data.type} for ${data.symbol || 'unknown'} (current: ${symbol})`);
+          
+          // CRITICAL: Only process data for current symbol
+          if (data.symbol && data.symbol !== symbol) {
+            console.log(`❌ Ignoring WebSocket data for ${data.symbol}, current symbol is ${symbol}`);
+            return;
+          }
+          
           if (data.type === 'price_update') {
+            console.log(`💰 Price update: ${data.symbol} = $${data.close}`);
             updateRealTimePrice(data);
+          } else if (data.type === 'historical_data') {
+            // Handle historical data from WebSocket
+            if (data.data && data.data.data) {
+              const ohlcData = data.data.data.map(item => ({
+                time: Math.floor(new Date(item.date).getTime() / 1000),
+                open: parseFloat(item.open),
+                high: parseFloat(item.high),
+                low: parseFloat(item.low),
+                close: parseFloat(item.close),
+                volume: parseFloat(item.volume || Math.floor(1000 + Math.random() * 5000))
+              })).sort((a, b) => a.time - b.time);
+              
+              if (ohlcData.length > 0) {
+                setChartData(ohlcData);
+                updateChartSeries(ohlcData);
+                updateIndicators(ohlcData);
+                setCurrentPrice(ohlcData[ohlcData.length - 1].close);
+                // Set initial lastUpdateTime to the last historical data point
+                setLastUpdateTime(ohlcData[ohlcData.length - 1].time);
+                
+                // Auto-size chart for the new WebSocket data
+                if (chartRef.current) {
+                  setTimeout(() => {
+                    try {
+                      // First fit all content to establish proper scale
+                      chartRef.current.timeScale().fitContent();
+                      
+                      // Then set optimal zoom level for this timeframe
+                      const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
+                      const intervalSeconds = timeframeConfig?.seconds || 86400;
+                      
+                      let visibleBarsCount;
+                      if (intervalSeconds <= 300) { // 5 minutes or less
+                        visibleBarsCount = 100; // Show about 8 hours of 5min data
+                      } else if (intervalSeconds <= 3600) { // 1 hour or less  
+                        visibleBarsCount = 120; // Show about 5 days of hourly data
+                      } else if (intervalSeconds <= 86400) { // 1 day or less
+                        visibleBarsCount = 90; // Show about 3 months of daily data
+                      } else {
+                        visibleBarsCount = 60; // Show reasonable amount for larger timeframes
+                      }
+                      
+                      // Apply the optimal zoom with some padding on the right
+                      chartRef.current.timeScale().setVisibleLogicalRange({
+                        from: Math.max(0, visibleBarsCount * -1),
+                        to: 10 // Show a few bars beyond current time for padding
+                      });
+                      
+                      console.log(`📏 Auto-sized WebSocket chart for ${symbol} showing ${visibleBarsCount} bars`);
+                    } catch (e) {
+                      console.warn('Failed to auto-size WebSocket chart:', e);
+                    }
+                  }, 300);
+                }
+              }
+            }
+          } else if (data.type === 'trading_signal') {
+            // Handle AI trading signals
+            console.log(`🤖 Trading signal received:`, data.signal);
+            addTradeSignal(data.signal);
+            if (onSignalReceived) {
+              onSignalReceived(data.signal);
+            }
           } else if (data.type === 'signal') {
+            // Handle legacy signals
             addTradeSignal(data.signal);
             if (onSignalReceived) {
               onSignalReceived(data.signal);
             }
           } else if (data.type === 'limit_order') {
             updateLimitOrders(data.orders);
+          } else if (data.type === 'error') {
+            console.error('WebSocket error:', data.message);
           }
         };
 
@@ -331,13 +411,47 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
         };
 
         ws.onclose = () => {
-          console.log('WebSocket disconnected, attempting to reconnect...');
+          console.log(`🔌 WebSocket disconnected for ${symbol}, attempting to reconnect...`);
           reconnectTimeout = setTimeout(connectWebSocket, 3000);
         };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
-        fetchHistoricalData();
+        // Start polling fallback for live updates if WebSocket fails
+        startPollingFallback();
       }
+    };
+
+    // Fallback polling method for live updates when WebSocket unavailable
+    const startPollingFallback = () => {
+      console.log(`🔄 Starting polling fallback for ${symbol} live updates`);
+      const pollInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`${apiBaseUrl}/api/market/price?symbol=${symbol}`);
+          if (response.ok) {
+            const priceData = await response.json();
+            // Convert to WebSocket format
+            const wsData = {
+              type: 'price_update',
+              symbol: priceData.symbol,
+              open: priceData.current_price,
+              high: priceData.session_high,
+              low: priceData.session_low,
+              close: priceData.current_price,
+              volume: priceData.volume,
+              change: 0,
+              timestamp: priceData.timestamp,
+              candle_time: Math.floor(Date.now() / 1000),
+              real_data: true,
+              source: 'api_polling'
+            };
+            updateRealTimePrice(wsData);
+          }
+        } catch (error) {
+          console.error('Polling fallback error:', error);
+        }
+      }, 5000); // Poll every 5 seconds for live updates
+
+      return () => clearInterval(pollInterval);
     };
 
     const fetchHistoricalData = async () => {
@@ -360,12 +474,12 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
           maxPoints = 1000;
         }
         
-        // For minute intervals, limit the period to prevent too much data
+        // For minute intervals, limit the period to prevent too much data but respect user choice
         if ((interval === '1m' || interval === '5m') && ['max', '10y', '5y', '2y', '1y'].includes(period)) {
-          period = '5d';
+          period = selectedPeriod; // Use selected period but limit points
           maxPoints = 1000;
         } else if ((interval === '15m' || interval === '30m') && ['max', '10y', '5y', '2y'].includes(period)) {
-          period = '1mo';
+          period = selectedPeriod; // Use selected period
           maxPoints = 1500;
         }
         
@@ -392,43 +506,99 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
             if (ohlcData.length > 0) {
               setChartData(ohlcData);
               updateChartSeries(ohlcData);
+              updateIndicators(ohlcData);
               setCurrentPrice(ohlcData[ohlcData.length - 1].close);
+              // Set initial lastUpdateTime to the last historical data point
+              setLastUpdateTime(ohlcData[ohlcData.length - 1].time);
+              
+              // Auto-size chart for the new data with optimal default view
+              if (chartRef.current) {
+                setTimeout(() => {
+                  try {
+                    // First fit all content to establish proper scale
+                    chartRef.current.timeScale().fitContent();
+                    
+                    // Then set optimal zoom level for this timeframe
+                    const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
+                    const intervalSeconds = timeframeConfig?.seconds || 86400;
+                    
+                    let visibleBarsCount;
+                    if (intervalSeconds <= 300) { // 5 minutes or less
+                      visibleBarsCount = 100; // Show about 8 hours of 5min data
+                    } else if (intervalSeconds <= 3600) { // 1 hour or less  
+                      visibleBarsCount = 120; // Show about 5 days of hourly data
+                    } else if (intervalSeconds <= 86400) { // 1 day or less
+                      visibleBarsCount = 90; // Show about 3 months of daily data
+                    } else {
+                      visibleBarsCount = 60; // Show reasonable amount for larger timeframes
+                    }
+                    
+                    // Apply the optimal zoom with some padding on the right
+                    chartRef.current.timeScale().setVisibleLogicalRange({
+                      from: Math.max(0, visibleBarsCount * -1),
+                      to: 10 // Show a few bars beyond current time for padding
+                    });
+                    
+                    console.log(`📏 Auto-sized chart for ${symbol} showing ${visibleBarsCount} bars`);
+                  } catch (e) {
+                    console.warn('Failed to auto-size chart:', e);
+                  }
+                }, 300); // Slightly longer timeout to ensure data is rendered
+              }
+              
+              // Notify parent component about chart data update
+              if (onChartDataUpdate) {
+                onChartDataUpdate(ohlcData);
+              }
               return;
             }
           }
         }
         
-        // Fallback to current price endpoint
-        const response = await fetch(`${apiBaseUrl}/api/market/nq-price`);
-        if (response.ok) {
-          const data = await response.json();
-          setCurrentPrice(data.current_price);
-          
-          // Generate mock data for demo
-          const now = Date.now() / 1000;
-          const mockData = generateMockOHLCData(data.current_price, now);
-          setChartData(mockData);
-          updateChartSeries(mockData);
-        } else {
-          throw new Error('Failed to fetch current price');
-        }
+        // If historical data fails, show error instead of mock data
+        console.error(`No historical data available for ${symbol} with period ${period} and interval ${interval}`);
         
       } catch (error) {
         console.error('Failed to fetch market data:', error);
-        // Generate mock data as last resort
-        const now = Date.now() / 1000;
-        const mockData = generateMockOHLCData(16500, now);
-        setChartData(mockData);
-        updateChartSeries(mockData);
-        setCurrentPrice(16500);
+        // Don't generate mock data - show error state instead
       }
     };
 
+    // Fetch current price first to get the latest value
+    const fetchCurrentPrice = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/market/price?symbol=${symbol}`);
+        if (response.ok) {
+          const priceData = await response.json();
+          setCurrentPrice(priceData.current_price);
+          console.log(`🎯 Current price loaded: ${symbol} = $${priceData.current_price}`);
+        }
+      } catch (error) {
+        console.error('Failed to fetch current price:', error);
+      }
+    };
+    
     // Try WebSocket first, fallback to HTTP
     connectWebSocket();
     
+    // Load current price immediately
+    fetchCurrentPrice();
+    
     // Also fetch initial historical data
     fetchHistoricalData();
+    
+    // Start polling fallback immediately to ensure live updates work
+    const cleanupPolling = startPollingFallback();
+    
+    // Set up periodic refresh of historical data based on selected timeframe
+    const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
+    const refreshInterval = timeframeConfig?.seconds * 1000 || 60000; // Convert to milliseconds
+    
+    const refreshTimer = setInterval(() => {
+      if (isPlaying) {
+        fetchHistoricalData();
+      }
+    }, Math.max(refreshInterval, 30000)); // Minimum 30 seconds refresh
 
     return () => {
       if (ws) {
@@ -437,45 +607,117 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+      }
+      if (cleanupPolling) {
+        cleanupPolling();
+      }
     };
   }, [isPlaying, timeframe, selectedPeriod, symbol, apiBaseUrl]);
 
-  // Generate mock OHLC data for demonstration
-  const generateMockOHLCData = (currentPrice, endTime) => {
-    const data = [];
-    let price = currentPrice - Math.random() * 100;
-    const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
-    const intervalSeconds = timeframeConfig?.seconds || 300;
-    const periods = Math.min(200, Math.floor(86400 / intervalSeconds)); // Max 200 periods or 1 day
+  // COMPREHENSIVE symbol reset to prevent cross-contamination
+  useEffect(() => {
+    console.log(`🔄 COMPREHENSIVE SYMBOL RESET: Switching to ${symbol}`);
     
-    for (let i = periods; i >= 0; i--) {
-      const time = endTime - (i * intervalSeconds);
-      const open = price;
-      const volatility = 2 + Math.random() * 8; // Increased volatility for NQ
-      const high = open + Math.random() * volatility;
-      const low = open - Math.random() * volatility;
-      const close = low + Math.random() * (high - low);
-      const volume = Math.floor(500 + Math.random() * 3000);
-      
-      data.push({
-        time: Math.floor(time),
-        open: parseFloat(open.toFixed(2)),
-        high: parseFloat(high.toFixed(2)),
-        low: parseFloat(low.toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-        volume: volume,
-      });
-      
-      // Add some trend to make it more realistic
-      price = close + (Math.random() - 0.5) * 2;
+    // Reset ALL state completely
+    setLastUpdateTime(0);
+    setCurrentCandle(null);
+    setLastCandleTime(null);
+    setCurrentPrice(null);
+    setPriceChange(0);
+    setChartData([]);
+    setTradeSignals([]);
+    setLimitOrders([]);
+    setCandleBuffer([]);
+    setPriceHistory([]);
+    
+    // Force clear all chart series data
+    if (candlestickSeriesRef.current) {
+      try {
+        candlestickSeriesRef.current.setData([]);
+        console.log(`✅ Cleared candlestick data for ${symbol}`);
+      } catch (e) {
+        console.warn('Failed to clear candlestick data:', e);
+      }
     }
     
-    return data;
-  };
+    if (volumeSeriesRef.current) {
+      try {
+        volumeSeriesRef.current.setData([]);
+        console.log(`✅ Cleared volume data for ${symbol}`);
+      } catch (e) {
+        console.warn('Failed to clear volume data:', e);
+      }
+    }
+    
+    // Clear all indicator series completely
+    Object.values(indicatorSeriesRefs.current).forEach(series => {
+      try {
+        if (series && typeof series.setData === 'function') {
+          series.setData([]);
+        } else if (series && typeof series === 'object') {
+          // Handle complex indicators like Bollinger Bands
+          Object.values(series).forEach(subSeries => {
+            if (subSeries && typeof subSeries.setData === 'function') {
+              subSeries.setData([]);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to clear indicator data:', e);
+      }
+    });
+    
+    // Reset chart zoom/scale and force a complete refresh
+    if (chartRef.current) {
+      setTimeout(() => {
+        try {
+          // Reset to optimal default view for new asset
+          chartRef.current.timeScale().fitContent();
+          chartRef.current.timeScale().scrollToRealTime();
+          
+          // Set a good default zoom level - show reasonable amount of data
+          const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
+          const intervalSeconds = timeframeConfig?.seconds || 86400;
+          
+          // Calculate optimal visible range based on timeframe
+          let visibleBarsCount;
+          if (intervalSeconds <= 300) { // 5 minutes or less
+            visibleBarsCount = 100; // Show about 8 hours of 5min data
+          } else if (intervalSeconds <= 3600) { // 1 hour or less  
+            visibleBarsCount = 120; // Show about 5 days of hourly data
+          } else if (intervalSeconds <= 86400) { // 1 day or less
+            visibleBarsCount = 90; // Show about 3 months of daily data
+          } else {
+            visibleBarsCount = 60; // Show reasonable amount for larger timeframes
+          }
+          
+          // Apply the optimal zoom
+          chartRef.current.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, visibleBarsCount * -1),
+            to: 10 // Show a few bars beyond current time for padding
+          });
+          
+          console.log(`✅ Reset chart scale for ${symbol} with ${visibleBarsCount} visible bars`);
+        } catch (e) {
+          console.warn('Failed to reset chart scale:', e);
+        }
+      }, 200);
+    }
+    
+    console.log(`✅ SYMBOL RESET COMPLETE for ${symbol}`);
+    
+  }, [symbol]);
+
+  // Store the latest chart data for indicator updates
+  const [chartData, setChartData] = useState([]);
+
 
   // Update chart series with new data
   const updateChartSeries = useCallback((ohlcData) => {
     if (!candlestickSeriesRef.current || !volumeSeriesRef.current) return;
+
 
     // Update main series based on chart type
     if (chartType === 'candlestick') {
@@ -508,30 +750,247 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
 
     // Update all enabled indicators
     updateIndicators(ohlcData);
-  }, [chartType, indicators]);
+  }, [chartType, indicators, symbol]);
 
-  // Update real-time price
+  // Sophisticated candle building state
+  const [currentCandle, setCurrentCandle] = useState(null);
+  const [lastCandleTime, setLastCandleTime] = useState(null);
+  const [candleBuffer, setCandleBuffer] = useState([]); // Buffer for accumulating ticks
+  const [priceHistory, setPriceHistory] = useState([]); // Track recent prices for realistic OHLC
+
+  // Get timeframe interval in seconds
+  const getTimeframeSeconds = useCallback(() => {
+    const timeframeConfig = timeframes.find(tf => tf.value === timeframe);
+    return timeframeConfig?.seconds || 86400; // Default to 1 day
+  }, [timeframe, timeframes]);
+
+  // Sophisticated candle start time calculation with proper boundaries
+  const getCandleStartTime = useCallback((timestamp) => {
+    const intervalSeconds = getTimeframeSeconds();
+    
+    // For minute intervals, align to minute boundaries
+    if (intervalSeconds < 3600) { // Less than 1 hour
+      const minutes = intervalSeconds / 60;
+      const date = new Date(timestamp * 1000);
+      const alignedMinutes = Math.floor(date.getMinutes() / minutes) * minutes;
+      date.setMinutes(alignedMinutes, 0, 0); // Set seconds and milliseconds to 0
+      return Math.floor(date.getTime() / 1000);
+    }
+    
+    // For hour intervals, align to hour boundaries  
+    if (intervalSeconds < 86400) { // Less than 1 day
+      const hours = intervalSeconds / 3600;
+      const date = new Date(timestamp * 1000);
+      const alignedHours = Math.floor(date.getHours() / hours) * hours;
+      date.setHours(alignedHours, 0, 0, 0);
+      return Math.floor(date.getTime() / 1000);
+    }
+    
+    // For daily intervals, align to day boundaries
+    const date = new Date(timestamp * 1000);
+    date.setHours(0, 0, 0, 0);
+    return Math.floor(date.getTime() / 1000);
+  }, [getTimeframeSeconds]);
+
+  // Check if we should start a new candle (sophisticated boundary detection)
+  const shouldStartNewCandle = useCallback((currentTime, lastCandleStart) => {
+    if (!lastCandleStart) return true;
+    
+    const intervalSeconds = getTimeframeSeconds();
+    const timeSinceLastCandle = currentTime - lastCandleStart;
+    
+    // Only start new candle if we've exceeded the timeframe interval
+    return timeSinceLastCandle >= intervalSeconds;
+  }, [getTimeframeSeconds]);
+
+  // Sophisticated real-time price update with proper candle building
   const updateRealTimePrice = useCallback((priceData) => {
     if (!candlestickSeriesRef.current) return;
 
-    const currentTime = Math.floor(Date.now() / 1000);
-    const newPoint = {
-      time: currentTime,
-      ...priceData,
-    };
-
-    if (chartType === 'candlestick') {
-      candlestickSeriesRef.current.update(newPoint);
-    } else {
-      candlestickSeriesRef.current.update({
-        time: currentTime,
-        value: priceData.close,
-      });
+    // CRITICAL: Multi-level symbol validation to prevent cross-contamination
+    if (priceData.symbol !== symbol) {
+      console.log(`❌ REJECTING price update for ${priceData.symbol}, current symbol is ${symbol}`);
+      return;
+    }
+    
+    // Additional check for formatted symbol to ensure complete isolation
+    if (priceData.formatted_symbol && priceData.symbol !== symbol) {
+      console.log(`❌ REJECTING formatted symbol mismatch: ${priceData.formatted_symbol} vs ${symbol}`);
+      return;
     }
 
-    setCurrentPrice(priceData.close);
+    // Validate price data is reasonable and not corrupted
+    const price = parseFloat(priceData.close);
+    if (!priceData.close || isNaN(price) || price <= 0 || price > 1000000) {
+      console.warn(`❌ Invalid price data for ${symbol}: $${price}`, priceData);
+      return;
+    }
+    
+    // Check for reasonable price changes (prevent massive jumps that indicate data corruption)
+    if (currentPrice && Math.abs(price - currentPrice) / currentPrice > 0.5) {
+      console.warn(`❌ Suspicious price jump for ${symbol}: ${currentPrice} -> ${price} (${((price - currentPrice) / currentPrice * 100).toFixed(1)}%)`);
+      return;
+    }
+
+    console.log(`✅ Processing price update for ${symbol}: $${price.toFixed(2)} (source: ${priceData.source || 'unknown'})`);
+
+    // Update the current price display with validated data
+    setCurrentPrice(price);
     setPriceChange(priceData.change || 0);
-  }, [chartType]);
+    
+    // Note: Removed auto-scaling to preserve user's chart position
+    
+    // Use the timestamp from the WebSocket message if available, otherwise use current time
+    const messageTime = priceData.candle_time || priceData.current_time || Math.floor(Date.now() / 1000);
+    const currentTime = Math.floor(messageTime);
+    
+    // Add to price history for better OHLC calculation
+    setPriceHistory(prev => {
+      const newHistory = [...prev, { price, timestamp: currentTime }].slice(-50); // Keep last 50 price points
+      return newHistory;
+    });
+
+    // Calculate proper candle start time based on timeframe
+    const candleStartTime = getCandleStartTime(currentTime);
+    
+    // Safety check: ensure candleStartTime is a valid number
+    if (!Number.isFinite(candleStartTime)) {
+      console.error(`❌ Invalid candleStartTime: ${candleStartTime}, skipping update`);
+      return;
+    }
+    
+    // Prevent updating with older data than we've already processed
+    if (candleStartTime < lastUpdateTime) {
+      console.log(`⏰ Skipping older update: ${candleStartTime} < ${lastUpdateTime}`);
+      return;
+    }
+    
+    // Determine if we need a new candle
+    const needNewCandle = shouldStartNewCandle(candleStartTime, lastCandleTime);
+    
+    if (needNewCandle) {
+      console.log(`🆕 Starting NEW candle at ${new Date(candleStartTime * 1000).toISOString()}`);
+      
+      // Complete the previous candle if it exists
+      if (currentCandle) {
+        console.log(`✅ COMPLETED candle: OHLC(${currentCandle.open}/${currentCandle.high}/${currentCandle.low}/${currentCandle.close}) Vol:${currentCandle.volume}`);
+      }
+      
+      // Start new candle with current price as all OHLC values
+      const newCandle = {
+        time: Number(candleStartTime),
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: parseFloat(priceData.volume || 0)
+      };
+      
+      
+      setCurrentCandle(newCandle);
+      setLastCandleTime(candleStartTime);
+      setCandleBuffer([{ price, timestamp: currentTime }]);
+      setLastUpdateTime(candleStartTime);
+      
+      // Update chart with new candle - ensure we don't update with older data
+      try {
+        if (chartType === 'candlestick') {
+          candlestickSeriesRef.current.update(newCandle);
+        } else if (chartType === 'line' || chartType === 'area') {
+          candlestickSeriesRef.current.update({
+            time: Number(candleStartTime),
+            value: price
+          });
+        }
+        
+        // Note: Removed auto-scaling to preserve user's chart position
+      } catch (error) {
+        console.error(`❌ Failed to update chart with new candle:`, error);
+        console.error(`Candle data:`, newCandle);
+      }
+      
+      // Update volume
+      if (indicators.volume.enabled && volumeSeriesRef.current) {
+        try {
+          volumeSeriesRef.current.update({
+            time: Number(candleStartTime),
+            value: newCandle.volume,
+            color: 'rgba(107, 114, 128, 0.8)' // Neutral color for new candle
+          });
+        } catch (error) {
+          console.error(`❌ Failed to update volume with new candle:`, error);
+        }
+      }
+      
+    } else if (currentCandle) {
+      console.log(`🔄 UPDATING existing candle with price: $${price}`);
+      
+      // Update existing candle with new price data
+      const updatedCandle = {
+        ...currentCandle,
+        time: Number(currentCandle.time),
+        high: Math.max(currentCandle.high, price),
+        low: Math.min(currentCandle.low, price),
+        close: price,
+        volume: Math.max(currentCandle.volume, parseFloat(priceData.volume || 0)) // Use max to avoid volume resets
+      };
+      
+      
+      // Add to candle buffer for sophisticated OHLC tracking
+      setCandleBuffer(prev => {
+        const newBuffer = [...prev, { price, timestamp: currentTime }];
+        
+        // Calculate more sophisticated OHLC from buffer
+        const bufferPrices = newBuffer.map(item => item.price);
+        const realtimeHigh = Math.max(...bufferPrices, updatedCandle.open);
+        const realtimeLow = Math.min(...bufferPrices, updatedCandle.open);
+        
+        // Update candle with buffer-calculated values
+        updatedCandle.high = realtimeHigh;
+        updatedCandle.low = realtimeLow;
+        
+        return newBuffer.slice(-20); // Keep last 20 ticks for this candle
+      });
+      
+      setCurrentCandle(updatedCandle);
+      setLastUpdateTime(candleStartTime);
+      
+      console.log(`📊 Updated OHLC: ${updatedCandle.open}/${updatedCandle.high}/${updatedCandle.low}/${updatedCandle.close}`);
+      
+      // Update chart with updated candle - ensure we don't update with older data  
+      try {
+        if (chartType === 'candlestick') {
+          candlestickSeriesRef.current.update(updatedCandle);
+        } else if (chartType === 'line' || chartType === 'area') {
+          candlestickSeriesRef.current.update({
+            time: Number(candleStartTime),
+            value: updatedCandle.close
+          });
+        }
+        
+        // Note: Removed auto-scaling to preserve user's chart position
+      } catch (error) {
+        console.error(`❌ Failed to update chart with updated candle:`, error);
+        console.error(`Updated candle data:`, updatedCandle);
+      }
+      
+      // Update volume
+      if (indicators.volume.enabled && volumeSeriesRef.current) {
+        try {
+          const isGreen = updatedCandle.close >= updatedCandle.open;
+          volumeSeriesRef.current.update({
+            time: Number(candleStartTime),
+            value: updatedCandle.volume,
+            color: chartType === 'candlestick' ? 
+              (isGreen ? 'rgba(38, 166, 154, 0.8)' : 'rgba(239, 83, 80, 0.8)') :
+              'rgba(107, 114, 128, 0.8)'
+          });
+        } catch (error) {
+          console.error(`❌ Failed to update volume with updated candle:`, error);
+        }
+      }
+    }
+  }, [symbol, chartType, indicators.volume.enabled, currentCandle, lastCandleTime, lastUpdateTime, getCandleStartTime, shouldStartNewCandle]);
 
   // Update limit orders display
   const updateLimitOrders = useCallback((orders) => {
@@ -638,6 +1097,13 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
       }
     });
   }, [indicators]);
+
+  // Update indicators when indicator settings change
+  useEffect(() => {
+    if (chartRef.current && chartData.length > 0) {
+      updateIndicators(chartData);
+    }
+  }, [indicators, updateIndicators, chartData]);
 
   // Technical Analysis Functions
   const calculateSMA = (data, period) => {
@@ -779,107 +1245,83 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 flex flex-col h-full">
       {/* Chart Header */}
-      <div className="flex items-center justify-between p-3 border-b border-gray-700 bg-gray-800">
-        <div className="flex items-center space-x-4">
+      <div className="flex items-center justify-between p-3 border-b border-gray-700 bg-gray-800 flex-wrap gap-2">
+        <div className="flex items-center space-x-4 flex-wrap">
+          {/* Symbol Selector */}
           <div className="flex items-center space-x-2">
-            <div className="relative">
-              <button
-                onClick={() => setShowSymbolSearch(true)}
-                className="flex items-center space-x-2 px-3 py-1 rounded-md hover:bg-gray-700 transition-colors"
-              >
-                <h3 className="text-lg font-semibold text-white">{displaySymbol}</h3>
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              
-            </div>
-            <div className="flex items-center space-x-1">
-              {/* Timeframe Selector */}
-              {timeframes.map((tf) => (
-                <button
-                  key={tf.value}
-                  onClick={() => changeTimeframe(tf.value)}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    timeframe === tf.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                  title={`${tf.label} - ${tf.description}`}
-                >
-                  {tf.label}
-                </button>
-              ))}
-            </div>
-            
-            <div className="flex items-center space-x-1">
-              {/* Period Selector */}
-              <span className="text-xs text-gray-400 px-2">Period:</span>
-              {periodOptions.map((period) => (
-                <button
-                  key={period.value}
-                  onClick={() => setSelectedPeriod(period.value)}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    selectedPeriod === period.value
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                  title={period.description}
-                >
-                  {period.label}
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => setShowSymbolSearch(true)}
+              className="flex items-center space-x-2 px-3 py-1 rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <h3 className="text-lg font-semibold text-white">{displaySymbol}</h3>
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
           </div>
-          
+
+          {/* Live Price Display */}
           {currentPrice && (
-            <div className="flex items-center space-x-3">
-              <span className="text-xl font-mono text-white">
-                ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div className="flex items-center space-x-2">
+              <span className="text-lg font-mono font-bold text-white">
+                ${typeof currentPrice === 'number' ? currentPrice.toFixed(2) : currentPrice}
               </span>
-              <span className={`text-sm font-medium flex items-center ${
-                priceChange >= 0 ? 'text-green-400' : 'text-red-400'
+              <span className={`text-sm font-medium ${
+                priceChange > 0 ? 'text-green-400' : priceChange < 0 ? 'text-red-400' : 'text-gray-400'
               }`}>
-                <span className={`mr-1 ${priceChange >= 0 ? '↗' : '↘'}`}>
-                  {priceChange >= 0 ? '▲' : '▼'}
-                </span>
-                {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}
+                {priceChange > 0 ? '+' : ''}{priceChange.toFixed(2)} ({((priceChange / currentPrice) * 100).toFixed(2)}%)
               </span>
             </div>
           )}
+
+          {/* Timeframe Dropdown */}
+          <div className="flex items-center space-x-2">
+            <label className="text-xs text-gray-400">Interval:</label>
+            <select
+              value={timeframe}
+              onChange={(e) => changeTimeframe(e.target.value)}
+              className="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:outline-none focus:border-blue-500"
+            >
+              {timeframes.map((tf) => (
+                <option key={tf.value} value={tf.value}>
+                  {tf.label}
+                </option>
+              ))}
+            </select>
+          </div>
+            
+          {/* Period Dropdown */}
+          <div className="flex items-center space-x-2">
+            <label className="text-xs text-gray-400">Period:</label>
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:outline-none focus:border-green-500"
+            >
+              {periodOptions.map((period) => (
+                <option key={period.value} value={period.value}>
+                  {period.label} - {period.description}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         
-        <div className="flex items-center space-x-2">
-          {/* Chart Type Selector */}
-          <div className="flex items-center space-x-1 mr-2">
-            {['candlestick', 'line', 'area'].map((type) => (
-              <button
-                key={type}
-                onClick={() => changeChartType(type)}
-                className={`p-2 rounded-lg transition-colors ${
-                  chartType === type
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-                title={type.charAt(0).toUpperCase() + type.slice(1)}
-              >
-                <ChartBarIcon className="w-4 h-4" />
-              </button>
-            ))}
+        {/* Right side controls */}
+        <div className="flex items-center space-x-2 flex-wrap">
+          {/* Chart Type Dropdown */}
+          <div className="flex items-center space-x-2">
+            <label className="text-xs text-gray-400">Type:</label>
+            <select
+              value={chartType}
+              onChange={(e) => changeChartType(e.target.value)}
+              className="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:outline-none focus:border-purple-500"
+            >
+              <option value="candlestick">Candlestick</option>
+              <option value="line">Line</option>
+              <option value="area">Area</option>
+            </select>
           </div>
-          
-          {/* Drawing Tools Toggle */}
-          <button
-            onClick={() => setShowDrawingTools(!showDrawingTools)}
-            className={`p-2 rounded-lg transition-colors ${
-              showDrawingTools
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Drawing Tools"
-          >
-            <AdjustmentsHorizontalIcon className="w-4 h-4" />
-          </button>
           
           {/* Add Indicator Button */}
           <button
@@ -1063,8 +1505,8 @@ const TradingChart = ({ symbol = 'NQ=F', displaySymbol = 'NQ', height = 600, api
         </div>
       </div>
 
-      {/* Symbol Search Modal */}
-      <SymbolSearch
+      {/* Dynamic Symbol Search Modal */}
+      <DynamicSymbolSearch
         isOpen={showSymbolSearch}
         onClose={() => setShowSymbolSearch(false)}
         onSymbolSelect={(newSymbol, newDisplaySymbol) => {

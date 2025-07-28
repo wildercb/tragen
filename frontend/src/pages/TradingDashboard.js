@@ -8,16 +8,20 @@ import {
   EyeIcon,
   BuildingOffice2Icon,
 } from '@heroicons/react/24/outline';
-import TradingChart from '../components/TradingChart';
+import TradingChartV3 from '../components/TradingChartV3';
 import LiveDataPanel from '../components/LiveDataPanel';
 import AgentPipeline from '../components/AgentPipeline';
 import AdminDashboard from '../components/AdminDashboard';
+import AITradingPanel from '../components/AITradingPanel';
+import AIDebugPanel from '../components/AIDebugPanel';
 
 const TradingDashboard = () => {
   const [activeView, setActiveView] = useState('trading');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentSymbol, setCurrentSymbol] = useState('NQ=F');
   const [currentDisplaySymbol, setCurrentDisplaySymbol] = useState('NQ');
+  const [chartData, setChartData] = useState([]);
+  const [tradingSignals, setTradingSignals] = useState([]);
 
   const views = [
     {
@@ -43,13 +47,45 @@ const TradingDashboard = () => {
   const renderActiveView = () => {
     switch (activeView) {
       case 'trading':
-        return <TradingView isFullscreen={isFullscreen} currentSymbol={currentSymbol} currentDisplaySymbol={currentDisplaySymbol} setCurrentSymbol={setCurrentSymbol} setCurrentDisplaySymbol={setCurrentDisplaySymbol} />;
+        return (
+          <TradingView 
+            isFullscreen={isFullscreen} 
+            currentSymbol={currentSymbol} 
+            currentDisplaySymbol={currentDisplaySymbol} 
+            setCurrentSymbol={setCurrentSymbol} 
+            setCurrentDisplaySymbol={setCurrentDisplaySymbol}
+            chartData={chartData}
+            setChartData={setChartData}
+            tradingSignals={tradingSignals}
+            setTradingSignals={setTradingSignals}
+          />
+        );
       case 'agents':
-        return <AgentsView />;
+        return (
+          <AgentsView 
+            currentSymbol={currentSymbol}
+            chartData={chartData}
+            onSignalCreated={(signal) => {
+              setTradingSignals(prev => [signal, ...prev.slice(0, 9)]);
+            }}
+          />
+        );
       case 'admin':
         return <AdminView />;
       default:
-        return <TradingView isFullscreen={isFullscreen} currentSymbol={currentSymbol} currentDisplaySymbol={currentDisplaySymbol} setCurrentSymbol={setCurrentSymbol} setCurrentDisplaySymbol={setCurrentDisplaySymbol} />;
+        return (
+          <TradingView 
+            isFullscreen={isFullscreen} 
+            currentSymbol={currentSymbol} 
+            currentDisplaySymbol={currentDisplaySymbol} 
+            setCurrentSymbol={setCurrentSymbol} 
+            setCurrentDisplaySymbol={setCurrentDisplaySymbol}
+            chartData={chartData}
+            setChartData={setChartData}
+            tradingSignals={tradingSignals}
+            setTradingSignals={setTradingSignals}
+          />
+        );
     }
   };
 
@@ -124,14 +160,37 @@ const TradingDashboard = () => {
           {renderActiveView()}
         </motion.div>
       </main>
+      
+      {/* AI Debug Panel - Always available in development */}
+      <AIDebugPanel symbol={currentSymbol} />
     </div>
   );
 };
 
 // Trading View Component
-const TradingView = ({ isFullscreen, currentSymbol, currentDisplaySymbol, setCurrentSymbol, setCurrentDisplaySymbol }) => {
+const TradingView = ({ 
+  isFullscreen, 
+  currentSymbol, 
+  currentDisplaySymbol, 
+  setCurrentSymbol, 
+  setCurrentDisplaySymbol, 
+  chartData, 
+  setChartData, 
+  tradingSignals, 
+  setTradingSignals 
+}) => {
+  
+  const handleSignalReceived = (signal) => {
+    console.log('Signal received:', signal);
+    setTradingSignals(prev => [signal, ...prev].slice(0, 50)); // Keep last 50 signals
+  };
+
+  const handleChartDataUpdate = (newData) => {
+    setChartData(newData);
+  };
+
   return (
-    <div className={`grid gap-6 ${isFullscreen ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-4'}`}>
+    <div className={`grid gap-6 ${isFullscreen ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-5'}`}>
       {/* Live Data Panel */}
       {!isFullscreen && (
         <div className="lg:col-span-1">
@@ -139,27 +198,90 @@ const TradingView = ({ isFullscreen, currentSymbol, currentDisplaySymbol, setCur
         </div>
       )}
 
-      {/* Trading Chart */}
+      {/* Trading Chart - Main Focus */}
       <div className={isFullscreen ? 'col-span-1' : 'lg:col-span-3'}>
-        <TradingChart 
+        <TradingChartV3 
           symbol={currentSymbol}
           displaySymbol={currentDisplaySymbol}
           height={isFullscreen ? 800 : 600} 
           apiBaseUrl="http://localhost:8001"
-          onSignalReceived={(signal) => console.log('Signal received:', signal)}
+          onSignalReceived={handleSignalReceived}
+          onChartDataUpdate={handleChartDataUpdate}
           onSymbolChange={(newSymbol, newDisplaySymbol) => {
             setCurrentSymbol(newSymbol);
             setCurrentDisplaySymbol(newDisplaySymbol);
+            setChartData([]); // Reset chart data when symbol changes
+            setTradingSignals([]); // Reset trading signals when symbol changes
           }}
         />
       </div>
 
-      {/* Additional Trading Info */}
+      {/* AI Trading Panel */}
       {!isFullscreen && (
-        <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <AITradingPanel 
+            symbol={currentSymbol}
+            chartData={chartData}
+            onSignalReceived={handleSignalReceived}
+            apiBaseUrl="http://localhost:8001"
+          />
+        </div>
+      )}
+
+      {/* Trading Stats and Signal History */}
+      {!isFullscreen && (
+        <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-4 gap-6">
           <TradingStatsCard title="Today's P&L" value="+$1,247.50" trend="up" />
           <TradingStatsCard title="Win Rate" value="68.4%" trend="up" />
           <TradingStatsCard title="Total Trades" value="24" trend="neutral" />
+          <TradingStatsCard 
+            title="Active Signals" 
+            value={tradingSignals.length.toString()} 
+            trend={tradingSignals.length > 0 ? "up" : "neutral"} 
+          />
+        </div>
+      )}
+
+      {/* Recent Signals Panel */}
+      {!isFullscreen && tradingSignals.length > 0 && (
+        <div className="lg:col-span-5">
+          <div className="bg-eerie-black-tertiary rounded-lg border border-dim-grey-700 p-4">
+            <h3 className="text-lg font-semibold text-white mb-4">Recent Trading Signals</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {tradingSignals.slice(0, 8).map((signal, index) => (
+                <div 
+                  key={signal.id || index}
+                  className={`p-3 rounded-lg border ${
+                    signal.action === 'buy' ? 'border-green-500 bg-green-500 bg-opacity-10' :
+                    signal.action === 'sell' ? 'border-red-500 bg-red-500 bg-opacity-10' :
+                    'border-gray-500 bg-gray-500 bg-opacity-10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-sm font-bold uppercase ${
+                      signal.action === 'buy' ? 'text-green-400' :
+                      signal.action === 'sell' ? 'text-red-400' :
+                      'text-gray-400'
+                    }`}>
+                      {signal.action}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {signal.confidence ? `${(signal.confidence * 100).toFixed(0)}%` : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="text-sm text-white mb-1">
+                    ${signal.price?.toFixed(2) || 'N/A'}
+                  </div>
+                  <div className="text-xs text-gray-400 truncate">
+                    {signal.reason || 'No reason provided'}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {new Date(signal.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -167,10 +289,14 @@ const TradingView = ({ isFullscreen, currentSymbol, currentDisplaySymbol, setCur
 };
 
 // Agents View Component
-const AgentsView = () => {
+const AgentsView = ({ currentSymbol, chartData, onSignalCreated }) => {
   return (
     <div>
-      <AgentPipeline />
+      <AgentPipeline 
+        currentSymbol={currentSymbol}
+        chartData={chartData}
+        onSignalCreated={onSignalCreated}
+      />
     </div>
   );
 };

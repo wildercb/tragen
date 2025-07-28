@@ -1,0 +1,36 @@
+services:
+  # Frontend - React Application
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:8001
+      - REACT_APP_WS_BASE_URL=ws://localhost:8001
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    networks:
+      - trading-network
+
+  # Backend - Simple Python Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./simple_server.py:/app/server.py
+    networks:
+      - trading-network
+
+networks:
+  trading-network:
+    driver: bridge
